@@ -7,6 +7,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.simibubi.create.foundation.blockEntity.behaviour.filtering.FilteringBehaviour;
 
+import net.Tetrachlorosilane.createcleargoal.content.recipefilter.FilterChangedMarker;
+
 import net.minecraft.world.item.ItemStack;
 
 /**

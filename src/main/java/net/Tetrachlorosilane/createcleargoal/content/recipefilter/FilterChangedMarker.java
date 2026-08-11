@@ -1,9 +1,12 @@
-package net.Tetrachlorosilane.createcleargoal.mixin;
+package net.Tetrachlorosilane.createcleargoal.content.recipefilter;
 
 /**
  * Mixin-injected interface: implemented by {@code BasinOperatingBlockEntity}
- * via {@link BasinOperatingBlockEntityMixin} so other mixins can notify the
+ * via the mixin in the {@code ..mixin} package so other mixins can notify the
  * operator that its basin's filter slot content changed.
+ * <p>
+ * Deliberately lives outside the mixin package: the mixin framework forbids
+ * referencing classes inside a declared mixin package directly.
  */
 public interface FilterChangedMarker {
 

@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import com.simibubi.create.content.processing.basin.BasinBlockEntity;
 import com.simibubi.create.content.processing.basin.BasinOperatingBlockEntity;
 
+import net.Tetrachlorosilane.createcleargoal.content.recipefilter.FilterChangedMarker;
 import net.Tetrachlorosilane.createcleargoal.content.recipefilter.RecipeFilterHelper;
 
 import net.minecraft.world.item.crafting.Recipe;
