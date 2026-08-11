@@ -1,9 +1,13 @@
+
 {
   "required": true,
   "minVersion": "0.8",
   "package": "net.Tetrachlorosilane.createcleargoal.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BasinOperatingBlockEntityMixin",
+    "FilteringBehaviourMixin",
+    "SawBlockEntityMixin"
   ],
   "client": [
   ],

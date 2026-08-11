@@ -10,6 +10,13 @@ group = mod_group_id
 
 repositories {
     mavenLocal()
+    // Create, Ponder, Flywheel
+    maven { url = 'https://maven.createmod.net' }
+    // Registrate
+    maven { url = 'https://maven.ithundxr.dev/snapshots' }
+    maven { url = 'https://maven.tterrag.com' }
+    // JEI (used by Create itself; hosts mezz.jei artifacts)
+    maven { url = 'https://maven.blamejared.com' }
 }
 
 base {
@@ -96,6 +103,13 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 
 dependencies {
+    // Create addon dependency
+    implementation "com.simibubi.create:create-${minecraft_version}:${create_version}"
+
+    // JEI API (compile-only; runtime provided by the player's JEI install)
+    compileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
+    compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
+
     // Example mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
