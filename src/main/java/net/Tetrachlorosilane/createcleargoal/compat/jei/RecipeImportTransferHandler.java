@@ -6,7 +6,9 @@ import javax.annotation.ParametersAreNonnullByDefault;
 
 import org.jetbrains.annotations.Nullable;
 
+import net.Tetrachlorosilane.createcleargoal.content.recipefilter.RecipeFilterEntry;
 import net.Tetrachlorosilane.createcleargoal.content.recipefilter.RecipeFilterImportPacket;
+import net.Tetrachlorosilane.createcleargoal.content.recipefilter.RecipeFilterItem;
 import net.Tetrachlorosilane.createcleargoal.content.recipefilter.RecipeFilterMenu;
 
 import net.createmod.catnip.platform.CatnipServices;
@@ -56,6 +58,10 @@ public class RecipeImportTransferHandler implements IRecipeTransferHandler<Recip
 		IRecipeSlotsView recipeSlots, Player player, boolean maxTransfer, boolean doTransfer) {
 		if (!doTransfer)
 			return null;
+		// apply locally for instant feedback; the server re-imports authoritatively
+		RecipeFilterEntry entry =
+			RecipeFilterItem.fromRecipe(recipe.id(), recipe.value(), player.level().registryAccess());
+		menu.importEntry(entry);
 		CatnipServices.NETWORK.sendToServer(new RecipeFilterImportPacket(recipe.id()));
 		return null;
 	}

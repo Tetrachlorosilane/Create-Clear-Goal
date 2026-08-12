@@ -27,7 +27,9 @@ import net.minecraft.world.level.Level;
  *       recorded entry.</li>
  *   <li>{@link FilterMode#LOCK} - only when the machine's inputs equal a
  *       recorded entry's inputs, lock onto that entry's recipe; otherwise
- *       leave selection untouched.</li>
+ *       leave selection untouched. If the recorded recipe is currently
+ *       unavailable (wrong heat/quantity, removed recipe), the machine halts
+ *       instead of silently falling back to other candidates.</li>
  * </ul>
  * <p>
  * LOCK semantics (as specified): if input A can be processed into B or C, an
@@ -44,7 +46,8 @@ public final class RecipeFilterHelper {
 
 	/**
 	 * @return the candidate list to use for a basin operator (mixer / press), or
-	 *         {@code null} to let Create's original selection logic run.
+	 *         {@code null} to let Create's original selection logic run; an
+	 *         empty list halts the machine (LOCK with an unavailable recipe).
 	 */
 	public static List<Recipe<?>> tryLockBasin(BasinBlockEntity basin, List<Recipe<?>> candidates) {
 		ItemStack filterStack = filterStackOf(basin.getFilter());
@@ -80,9 +83,23 @@ public final class RecipeFilterHelper {
 			for (RecipeFilterEntry entry : entries) {
 				if (!inputsMatch(entry, machineInputs))
 					continue;
+				// Placeholder-ish entries (no recipe id and no recorded outputs)
+				// cannot lock onto anything; skip them instead of halting.
+				if (entry.recipeId().isEmpty() && entry.nonEmptyOutputs().isEmpty())
+					continue;
 				Recipe<?> locked = lockBasinEntry(manager, entry, candidates, level);
-				if (locked != null)
-					return List.of(locked);
+				if (locked != null) {
+					// mutable: subclasses of BasinOperatingBlockEntity may append
+					// candidates to the returned list (e.g. the mixer's potion recipes)
+					List<Recipe<?>> result = new ArrayList<>(1);
+					result.add(locked);
+					return result;
+				}
+				// The recorded entry's inputs match, but its recipe cannot run
+				// right now (wrong heat/quantity, removed recipe, ...). LOCK means
+				// "this input only runs the recorded recipe", so halt instead of
+				// silently falling back to other candidates.
+				return List.of();
 			}
 			return null;
 		}
@@ -111,8 +128,9 @@ public final class RecipeFilterHelper {
 	}
 
 	/**
-	 * @return the candidate list to use for the mechanical saw, or {@code null} to
-	 *         let Create's original selection logic run.
+	 * @return the candidate list to use for the mechanical saw, or {@code null}
+	 *         to let Create's original selection logic run; an empty list halts
+	 *         the machine (LOCK with an unavailable recipe).
 	 */
 	public static List<RecipeHolder<? extends Recipe<?>>> tryLockSaw(SawBlockEntity saw, FilteringBehaviour filtering,
 		List<RecipeHolder<? extends Recipe<?>>> candidates) {
@@ -149,9 +167,16 @@ public final class RecipeFilterHelper {
 			for (RecipeFilterEntry entry : entries) {
 				if (!sawInputMatches(entry, input))
 					continue;
+				if (entry.recipeId().isEmpty() && entry.nonEmptyOutputs().isEmpty())
+					continue;
 				RecipeHolder<? extends Recipe<?>> locked = lockSawEntry(manager, entry, candidates, level);
-				if (locked != null)
-					return List.of(locked);
+				if (locked != null) {
+					List<RecipeHolder<? extends Recipe<?>>> result = new ArrayList<>(1);
+					result.add(locked);
+					return result;
+				}
+				// Same LOCK semantics as the basin: halt, don't fall back.
+				return List.of();
 			}
 			return null;
 		}
@@ -278,10 +303,14 @@ public final class RecipeFilterHelper {
 
 		switch (entry.outputMatch()) {
 		case EXACT -> {
-			if (recipeOutputs.size() != recorded.size())
+			// Compare as sets of item types: duplicate recordings must not match
+			// a recipe with extra distinct outputs (recorded [A,A] vs [A,B]).
+			List<ItemStack> recordedDistinct = distinct(recorded);
+			List<ItemStack> recipeDistinct = distinct(recipeOutputs);
+			if (recipeDistinct.size() != recordedDistinct.size())
 				return false;
-			for (ItemStack r : recorded)
-				if (!containsSame(recipeOutputs, r))
+			for (ItemStack r : recordedDistinct)
+				if (!containsSame(recipeDistinct, r))
 					return false;
 			return true;
 		}

@@ -1,10 +1,6 @@
 package net.Tetrachlorosilane.createcleargoal.content.recipefilter;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import com.simibubi.create.content.processing.recipe.ProcessingOutput;
-import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
+import java.util.Optional;
 
 import net.Tetrachlorosilane.createcleargoal.ModPackets;
 
@@ -16,8 +12,8 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
+import net.minecraft.world.item.crafting.RecipeHolder;
 
 /**
  * Client -> server: import a recipe (from JEI) into the held recipe filter as
@@ -32,36 +28,22 @@ public record RecipeFilterImportPacket(ResourceLocation recipeId) implements Ser
 
 	@Override
 	public void handle(ServerPlayer player) {
-		ItemStack held = player.getMainHandItem();
-		if (!(held.getItem() instanceof RecipeFilterItem))
+		Optional<Recipe<?>> recipe = player.level()
+			.getRecipeManager()
+			.byKey(recipeId)
+			.map(RecipeHolder::value);
+		if (recipe.isEmpty())
 			return;
 
-		player.level().getRecipeManager()
-			.byKey(recipeId)
-			.ifPresent(holder -> {
-				Recipe<?> recipe = holder.value();
-				List<ItemStack> inputs = new ArrayList<>();
-				for (Ingredient ingredient : recipe.getIngredients()) {
-					ItemStack[] items = ingredient.getItems();
-					if (items.length > 0 && !items[0].isEmpty())
-						inputs.add(items[0]);
-					if (inputs.size() >= RecipeFilterMenu.INPUT_SLOTS)
-						break;
-				}
-				List<ItemStack> outputs = new ArrayList<>();
-				ItemStack result = recipe.getResultItem(player.level().registryAccess());
-				if (!result.isEmpty())
-					outputs.add(result);
-				if (recipe instanceof ProcessingRecipe<?, ?> processing) {
-					for (ProcessingOutput output : processing.getRollableResults()) {
-						ItemStack stack = output.getStack();
-						if (!stack.isEmpty() && outputs.stream().noneMatch(o -> ItemStack.isSameItem(o, stack)))
-							outputs.add(stack);
-					}
-				}
-				RecipeFilterItem.addEntry(held, RecipeFilterEntry.ofRecipe(
-					outputs.isEmpty() ? "" : outputs.get(0).getHoverName().getString(), recipeId, inputs, outputs));
-			});
+		RecipeFilterEntry entry = RecipeFilterItem.fromRecipe(recipeId, recipe.get(), player.level().registryAccess());
+		if (player.containerMenu instanceof RecipeFilterMenu menu) {
+			// through the open menu so the GUI list, slots and templates stay in sync
+			menu.importEntry(entry);
+			return;
+		}
+		ItemStack held = player.getMainHandItem();
+		if (held.getItem() instanceof RecipeFilterItem)
+			RecipeFilterItem.addEntry(held, entry);
 	}
 
 	@Override

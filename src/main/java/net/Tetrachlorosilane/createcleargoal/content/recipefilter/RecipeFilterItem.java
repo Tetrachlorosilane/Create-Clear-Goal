@@ -5,17 +5,22 @@ import java.util.List;
 
 import com.simibubi.create.content.logistics.filter.FilterItem;
 import com.simibubi.create.content.logistics.filter.FilterItemStack;
+import com.simibubi.create.content.processing.recipe.ProcessingOutput;
+import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
 
 import net.Tetrachlorosilane.createcleargoal.AllDataComponents;
-import net.Tetrachlorosilane.createcleargoal.Createcleargoal;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.Recipe;
 
 import net.neoforged.neoforge.items.ItemStackHandler;
 
@@ -33,10 +38,6 @@ public class RecipeFilterItem extends FilterItem {
 
 	public RecipeFilterItem(Properties properties) {
 		super(properties);
-	}
-
-	public static RecipeFilterItem get() {
-		return Createcleargoal.RECIPE_FILTER.get();
 	}
 
 	// --- filter-level property: mode ---
@@ -93,6 +94,38 @@ public class RecipeFilterItem extends FilterItem {
 		entries.remove(index);
 		setEntries(stack, entries);
 		return true;
+	}
+
+	/**
+	 * Builds an entry from a recipe (JEI import): snapshots the first item of
+	 * each ingredient and the recipe's outputs, capped to the GUI slot counts so
+	 * the stored entry always matches what the editor shows and edits.
+	 */
+	public static RecipeFilterEntry fromRecipe(ResourceLocation recipeId, Recipe<?> recipe,
+		HolderLookup.Provider registries) {
+		List<ItemStack> inputs = new ArrayList<>();
+		for (Ingredient ingredient : recipe.getIngredients()) {
+			ItemStack[] items = ingredient.getItems();
+			if (items.length > 0 && !items[0].isEmpty())
+				inputs.add(items[0]);
+			if (inputs.size() >= RecipeFilterMenu.INPUT_SLOTS)
+				break;
+		}
+		List<ItemStack> outputs = new ArrayList<>();
+		ItemStack result = recipe.getResultItem(registries);
+		if (!result.isEmpty())
+			outputs.add(result);
+		if (recipe instanceof ProcessingRecipe<?, ?> processing) {
+			for (ProcessingOutput output : processing.getRollableResults()) {
+				if (outputs.size() >= RecipeFilterMenu.OUTPUT_SLOTS)
+					break;
+				ItemStack stack = output.getStack();
+				if (!stack.isEmpty() && outputs.stream().noneMatch(o -> ItemStack.isSameItem(o, stack)))
+					outputs.add(stack);
+			}
+		}
+		return RecipeFilterEntry.ofRecipe(
+			outputs.isEmpty() ? "" : outputs.get(0).getHoverName().getString(), recipeId, inputs, outputs);
 	}
 
 	// --- FilterItem overrides ---

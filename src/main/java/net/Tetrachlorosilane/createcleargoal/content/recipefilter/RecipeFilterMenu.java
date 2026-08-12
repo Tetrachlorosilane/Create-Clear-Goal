@@ -101,7 +101,9 @@ public class RecipeFilterMenu extends AbstractFilterMenu {
 		return FilterMode.values()[modeSlot.get()];
 	}
 
+	/** Sets the filter-level mode and persists it to the edited item. */
 	public void setMode(FilterMode mode) {
+		RecipeFilterItem.setMode(contentHolder, mode);
 		modeSlot.set(mode.ordinal());
 	}
 
@@ -160,6 +162,23 @@ public class RecipeFilterMenu extends AbstractFilterMenu {
 		saveCurrentEntry();
 		selectedIndex.set(index);
 		loadSelectedEntry();
+	}
+
+	/**
+	 * Imports a recipe entry (JEI) into the filter, appending it and selecting it
+	 * so an open GUI shows the imported recipe immediately. Both the client and
+	 * the server menu apply this; the server copy is authoritative.
+	 */
+	public void importEntry(RecipeFilterEntry entry) {
+		List<RecipeFilterEntry> entries = new ArrayList<>(RecipeFilterItem.getEntries(contentHolder));
+		if (entries.size() >= ENTRIES)
+			return;
+		entries.add(entry);
+		RecipeFilterItem.setEntries(contentHolder, entries);
+		while (templates.size() <= entries.size() - 1)
+			templates.add(RecipeFilterEntry.empty());
+		templates.set(entries.size() - 1, entry);
+		selectEntry(entries.size() - 1);
 	}
 
 	public void saveCurrentEntry() {

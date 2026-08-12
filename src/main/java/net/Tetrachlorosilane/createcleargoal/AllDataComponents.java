@@ -25,8 +25,4 @@ public class AllDataComponents {
 			() -> DataComponentType.<FilterMode>builder()
 				.persistent(FilterMode.CODEC)
 				.build());
-
-	public static void register() {
-		// no-op; kept for symmetry with other All* registration holders
-	}
 }

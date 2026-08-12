@@ -9,7 +9,6 @@ import net.createmod.catnip.net.base.ServerboundPacketPayload;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.ItemStack;
 
 /** Client -> server: change the filter-level mode (block / allow-only / lock). */
 public record RecipeFilterModePacket(FilterMode mode) implements ServerboundPacketPayload {
@@ -20,9 +19,7 @@ public record RecipeFilterModePacket(FilterMode mode) implements ServerboundPack
 
 	@Override
 	public void handle(ServerPlayer player) {
-		ItemStack held = player.getMainHandItem();
-		if (held.getItem() instanceof RecipeFilterItem)
-			RecipeFilterItem.setMode(held, mode());
+		// persist through the menu: writes the edited item's component server-side
 		if (player.containerMenu instanceof RecipeFilterMenu menu)
 			menu.setMode(mode());
 	}

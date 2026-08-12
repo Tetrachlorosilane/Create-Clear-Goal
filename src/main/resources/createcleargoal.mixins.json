@@ -5,8 +5,10 @@
   "package": "net.Tetrachlorosilane.createcleargoal.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BasinOperatingBlockEntityAccessor",
     "BasinOperatingBlockEntityMixin",
-    "FilteringBehaviourMixin",
+    "MechanicalMixerBlockEntityMixin",
+    "PressingBehaviourMixin",
     "SawBlockEntityMixin"
   ],
   "client": [

@@ -4,8 +4,6 @@
   "recipe_filter.summary": "%1$s recipe(s) recorded",
   "recipe_filter.new_entry": "New Recipe",
   "recipe_filter.delete": "Delete recipe",
-  "recipe_filter.group.mode": "Filter mode:",
-  "recipe_filter.group.match": "Output match:",
   "recipe_filter.mode.block": "Block recorded",
   "recipe_filter.mode.allow_only": "Only recorded",
   "recipe_filter.mode.lock": "Lock on input",

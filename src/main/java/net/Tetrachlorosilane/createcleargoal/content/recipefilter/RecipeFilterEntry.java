@@ -39,10 +39,6 @@ public record RecipeFilterEntry(String name, Optional<ResourceLocation> recipeId
 		return new RecipeFilterEntry(name, Optional.of(recipeId), inputs, outputs, OutputMatchMode.EXACT);
 	}
 
-	public static RecipeFilterEntry manual(String name, List<ItemStack> inputs, List<ItemStack> outputs) {
-		return new RecipeFilterEntry(name, Optional.empty(), inputs, outputs, OutputMatchMode.EXACT);
-	}
-
 	/** An empty placeholder entry shown as "new recipe" in the list. */
 	public static RecipeFilterEntry empty() {
 		return new RecipeFilterEntry("", Optional.empty(), List.of(), List.of(), OutputMatchMode.EXACT);
@@ -68,8 +64,9 @@ public record RecipeFilterEntry(String name, Optional<ResourceLocation> recipeId
 		return outputs.stream().filter(s -> !s.isEmpty()).toList();
 	}
 
+	/** True when nothing is recorded: no name, no inputs and no outputs. */
 	public boolean isEmpty() {
-		return nonEmptyInputs().isEmpty() && nonEmptyOutputs().isEmpty();
+		return (name == null || name.isBlank()) && nonEmptyInputs().isEmpty() && nonEmptyOutputs().isEmpty();
 	}
 
 	/** Default display name: player name, or first output's hover name for imports. */
