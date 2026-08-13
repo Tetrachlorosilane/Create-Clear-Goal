@@ -8,5 +8,6 @@
   "recipe_filter.mode.allow_only": "Only recorded",
   "recipe_filter.mode.lock": "Lock on input",
   "recipe_filter.match.exact": "Exact outputs",
-  "recipe_filter.match.contains": "Contains outputs"
+  "recipe_filter.match.contains": "Contains outputs",
+  "recipe_filter.import_failed": "Recipe not found for import"
 }

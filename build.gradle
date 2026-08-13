@@ -25,6 +25,12 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
+// The sources contain UTF-8 comments (and Chinese text); do not let javac
+// fall back to the platform default encoding (GBK on zh-CN Windows).
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
 neoForge {
     // Specify the version of NeoForge to use.
     version = project.neo_version
@@ -109,6 +115,35 @@ dependencies {
     // JEI API (compile-only; runtime provided by the player's JEI install)
     compileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
+
+    // EMI / REI APIs (compile-only; runtime provided by the player's installs).
+    // Resolved from the local Gradle cache so the build works without access to
+    // their mavens (repo.sleeping.town / maven.shedaniel.me are unreachable from
+    // this machine). On a machine with network access, prefer the maven
+    // coordinates:
+    //   compileOnly "dev.emi:emi-neoforge:${emi_version}"
+    //   compileOnly "me.shedaniel:RoughlyEnoughItems-neoforge:${rei_version}"
+    // REI also needs cloth-config (bundles me.shedaniel.math) and architectury.
+    compileOnly files(cacheApiJar('dev.emi', 'emi-neoforge', emi_version))
+    compileOnly files(cacheApiJar('me.shedaniel', 'RoughlyEnoughItems-neoforge', rei_version))
+    compileOnly files(cacheApiJar('me.shedaniel.cloth', 'cloth-config-neoforge', '15.0.130'))
+    compileOnly files(cacheApiJar('dev.architectury', 'architectury-neoforge', '13.0.6'))
+}
+
+/**
+ * Locates a jar inside the local Gradle module cache (files-2.1 layout). Used
+ * for compile-only APIs whose remote mavens are not reachable from this
+ * machine; the jars are already present because other projects resolved them.
+ */
+def cacheApiJar(String group, String artifact, String version) {
+    def base = new File(gradle.gradleUserHomeDir,
+        "caches/modules-2/files-2.1/${group}/${artifact}/${version}")
+    if (!base.exists())
+        throw new GradleException("API jar not found in Gradle cache: ${base}")
+    def jars = fileTree(base) { include '**/*.jar'; exclude '**/*sources*'; exclude '**/*javadoc*' }
+    if (jars.size() != 1)
+        throw new GradleException("Expected exactly one API jar under ${base}, found ${jars.files}")
+    return jars.singleFile
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

@@ -31,6 +31,30 @@ side = "BOTH"
 [[dependencies."${mod_id}"]]
 modId = "create"
 type = "required"
-versionRange = "[6.0.0,)"
+versionRange = "[6.0.10,6.0.12)"
 ordering = "NONE"
 side = "BOTH"
+
+# JEI (optional, client-side recipe import + ghost slot drag)
+[[dependencies."${mod_id}"]]
+modId = "jei"
+type = "optional"
+versionRange = "[19.0.0,)"
+ordering = "AFTER"
+side = "CLIENT"
+
+# EMI (optional, client-side recipe import + ghost slot drag)
+[[dependencies."${mod_id}"]]
+modId = "emi"
+type = "optional"
+versionRange = "[1.0.0,)"
+ordering = "AFTER"
+side = "CLIENT"
+
+# REI (optional, client-side recipe import + ghost slot drag)
+[[dependencies."${mod_id}"]]
+modId = "roughlyenoughitems"
+type = "optional"
+versionRange = "[16.0.0,)"
+ordering = "AFTER"
+side = "CLIENT"

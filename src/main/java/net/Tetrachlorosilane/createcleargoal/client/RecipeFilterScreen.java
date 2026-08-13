@@ -44,7 +44,7 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 	private IconButton confirmButton;
 	private IconButton[] modeButtons = new IconButton[3];
 	private IconButton[] matchButtons = new IconButton[2];
-	private boolean editingName = false;
+	private boolean nameWasFocused = false;
 
 	public RecipeFilterScreen(RecipeFilterMenu menu, Inventory inv, Component title) {
 		super(menu, inv, title);
@@ -64,7 +64,7 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 		// name editor inside the entry list row, transparent like Create's
 		// AddressEditBox: y+28 with height 9 centres the text at y=32.5
 		nameBox = new EditBox(font, x + 54, y + 28, 112, 9, Component.literal(""));
-		nameBox.setMaxLength(64);
+		nameBox.setMaxLength(RecipeFilterMenu.MAX_NAME_LENGTH);
 		nameBox.setCanLoseFocus(true);
 		nameBox.setBordered(false);
 		nameBox.setTextColor(0xffffff);
@@ -120,7 +120,8 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 		confirmButton = new IconButton(x + ModGuiTextures.RECIPE_FILTER_BG.getWidth() - 33,
 			y + ModGuiTextures.RECIPE_FILTER_BG.getHeight() - 24, AllIcons.I_CONFIRM);
 		confirmButton.withCallback(() -> {
-			minecraft.player.closeContainer();
+			if (minecraft != null && minecraft.player != null)
+				minecraft.player.closeContainer();
 		});
 
 		addRenderableWidget(resetButton);
@@ -130,14 +131,19 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 	@Override
 	public void containerTick() {
 		super.containerTick();
-		if (editingName && !nameBox.isFocused()) {
-			commitName();
-			return;
+		if (nameBox.isFocused()) {
+			nameWasFocused = true;
+		} else {
+			if (nameWasFocused) {
+				commitName();
+				nameWasFocused = false;
+			} else {
+				// keep the name box in sync with the selected entry when not editing
+				String display = getEntryDisplayName();
+				if (!nameBox.getValue().equals(display))
+					nameBox.setValue(display);
+			}
 		}
-		// keep the name box in sync with the selected entry when not editing
-		String display = getEntryDisplayName();
-		if (!editingName && !nameBox.isFocused() && !nameBox.getValue().equals(display))
-			nameBox.setValue(display);
 
 		// delete disabled while the new-entry placeholder is selected
 		deleteButton.active = !menu.isNewEntrySelected();
@@ -169,7 +175,7 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 	public boolean mouseClicked(double mouseX, double mouseY, int button) {
 		// clicking the name area (outside the box) starts editing
 		if (isInNameArea(mouseX, mouseY) && !nameBox.isMouseOver(mouseX, mouseY)) {
-			editingName = true;
+			nameBox.setFocused(true);
 			if (menu.isNewEntrySelected())
 				nameBox.setValue("");
 		}
@@ -189,18 +195,20 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 		return super.keyPressed(keyCode, scanCode, modifiers);
 	}
 
+	@Override
+	public void onClose() {
+		if (nameBox.isFocused())
+			commitName();
+		super.onClose();
+	}
+
 	private void commitName() {
-		if (editingName || nameBox.isFocused()) {
-			String name = nameBox.getValue().trim();
-			if (!name.isEmpty() || menu.isNewEntrySelected()) {
-				// apply locally first; the server confirms via packet
-				menu.setName(menu.getSelectedIndex(), name);
-				CatnipServices.NETWORK
-					.sendToServer(new RecipeFilterNamePacket(menu.getSelectedIndex(), name));
-			}
-			editingName = false;
-			nameBox.setFocused(false);
-		}
+		String name = nameBox.getValue().trim();
+		// Apply locally first; the server confirms via packet. Empty names are
+		// valid for existing entries and restore the default output-derived name.
+		menu.setName(menu.getSelectedIndex(), name);
+		CatnipServices.NETWORK.sendToServer(new RecipeFilterNamePacket(menu.getSelectedIndex(), name));
+		nameBox.setFocused(false);
 	}
 
 	private String getEntryDisplayName() {

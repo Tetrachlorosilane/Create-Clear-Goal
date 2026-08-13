@@ -6,16 +6,20 @@ import java.util.Optional;
 
 import com.simibubi.create.content.kinetics.saw.SawBlockEntity;
 import com.simibubi.create.content.processing.basin.BasinBlockEntity;
+import com.simibubi.create.content.processing.basin.BasinRecipe;
 import com.simibubi.create.content.processing.recipe.ProcessingOutput;
 import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
 import com.simibubi.create.foundation.blockEntity.behaviour.filtering.FilteringBehaviour;
 import com.simibubi.create.foundation.item.ItemHelper;
 
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.level.Level;
+
+import net.neoforged.neoforge.fluids.FluidStack;
 
 /**
  * Core restriction logic for the recipe filter, driven by the filter's
@@ -67,25 +71,39 @@ public final class RecipeFilterHelper {
 		case BLOCK -> {
 			List<Recipe<?>> result = new ArrayList<>();
 			for (Recipe<?> candidate : candidates)
-				if (!matchesAnyEntry(entries, candidate, level))
+				if (!matchesAnyEntry(entries, candidate, manager, level))
 					result.add(candidate);
 			return result;
 		}
 		case ALLOW_ONLY -> {
 			List<Recipe<?>> result = new ArrayList<>();
 			for (Recipe<?> candidate : candidates)
-				if (matchesAnyEntry(entries, candidate, level))
+				if (matchesAnyEntry(entries, candidate, manager, level))
 					result.add(candidate);
 			return result;
 		}
 		case LOCK -> {
 			List<ItemStack> machineInputs = basinInputs(basin);
 			for (RecipeFilterEntry entry : entries) {
+				if (entry.recipeId().isPresent()) {
+					Recipe<?> locked = lockBasinEntry(manager, entry, candidates, level);
+					if (locked != null) {
+						List<Recipe<?>> result = new ArrayList<>(1);
+						result.add(locked);
+						return result;
+					}
+					// Imported entries match using the real recipe's ingredients,
+					// including tags and fluids; halt if the basin currently
+					// satisfies that recipe but the candidate is unavailable.
+					if (basinRecipeInputsMatch(manager, basin, entry))
+						return List.of();
+					continue;
+				}
 				if (!inputsMatch(entry, machineInputs))
 					continue;
 				// Placeholder-ish entries (no recipe id and no recorded outputs)
 				// cannot lock onto anything; skip them instead of halting.
-				if (entry.recipeId().isEmpty() && entry.nonEmptyOutputs().isEmpty())
+				if (entry.nonEmptyOutputs().isEmpty())
 					continue;
 				Recipe<?> locked = lockBasinEntry(manager, entry, candidates, level);
 				if (locked != null) {
@@ -128,6 +146,20 @@ public final class RecipeFilterHelper {
 	}
 
 	/**
+	 * Whether the basin currently satisfies an imported entry's recipe. Uses
+	 * Create's own recipe matching when the recipe still exists, so tag
+	 * ingredients and fluid ingredients retain their full semantics. If the
+	 * recipe was removed, falls back to the recorded item inputs.
+	 */
+	private static boolean basinRecipeInputsMatch(RecipeManager manager, BasinBlockEntity basin,
+		RecipeFilterEntry entry) {
+		Optional<RecipeHolder<?>> holder = manager.byKey(entry.recipeId().orElseThrow());
+		if (holder.isEmpty())
+			return inputsMatch(entry, basinInputs(basin));
+		return BasinRecipe.match(basin, holder.get().value());
+	}
+
+	/**
 	 * @return the candidate list to use for the mechanical saw, or {@code null}
 	 *         to let Create's original selection logic run; an empty list halts
 	 *         the machine (LOCK with an unavailable recipe).
@@ -165,9 +197,20 @@ public final class RecipeFilterHelper {
 		}
 		case LOCK -> {
 			for (RecipeFilterEntry entry : entries) {
+				if (entry.recipeId().isPresent()) {
+					RecipeHolder<? extends Recipe<?>> locked = lockSawEntry(manager, entry, candidates, level);
+					if (locked != null) {
+						List<RecipeHolder<? extends Recipe<?>>> result = new ArrayList<>(1);
+						result.add(locked);
+						return result;
+					}
+					if (sawRecipeInputMatches(manager, entry, input))
+						return List.of();
+					continue;
+				}
 				if (!sawInputMatches(entry, input))
 					continue;
-				if (entry.recipeId().isEmpty() && entry.nonEmptyOutputs().isEmpty())
+				if (entry.nonEmptyOutputs().isEmpty())
 					continue;
 				RecipeHolder<? extends Recipe<?>> locked = lockSawEntry(manager, entry, candidates, level);
 				if (locked != null) {
@@ -203,6 +246,15 @@ public final class RecipeFilterHelper {
 		return null;
 	}
 
+	/** Whether the saw input matches an imported entry's real first ingredient. */
+	private static boolean sawRecipeInputMatches(RecipeManager manager, RecipeFilterEntry entry, ItemStack input) {
+		Optional<RecipeHolder<?>> holder = manager.byKey(entry.recipeId().orElseThrow());
+		if (holder.isEmpty())
+			return sawInputMatches(entry, input);
+		List<Ingredient> ingredients = holder.get().value().getIngredients();
+		return !ingredients.isEmpty() && ingredients.get(0).test(input);
+	}
+
 	// --- matching helpers ---
 
 	private static ItemStack filterStackOf(FilteringBehaviour filtering) {
@@ -214,9 +266,14 @@ public final class RecipeFilterHelper {
 		return filterStack;
 	}
 
-	private static boolean matchesAnyEntry(List<RecipeFilterEntry> entries, Recipe<?> candidate, Level level) {
+	private static boolean matchesAnyEntry(List<RecipeFilterEntry> entries, Recipe<?> candidate, RecipeManager manager,
+		Level level) {
 		for (RecipeFilterEntry entry : entries)
-			if (outputMatches(candidate, entry, level))
+			if (entry.recipeId().isPresent()) {
+				Optional<RecipeHolder<?>> holder = manager.byKey(entry.recipeId().get());
+				if (holder.isPresent() && holder.get().value() == candidate)
+					return true;
+			} else if (outputMatches(candidate, entry, level))
 				return true;
 		return false;
 	}
@@ -224,7 +281,10 @@ public final class RecipeFilterHelper {
 	private static boolean matchesAnyEntry(List<RecipeFilterEntry> entries, RecipeHolder<? extends Recipe<?>> candidate,
 		Level level) {
 		for (RecipeFilterEntry entry : entries)
-			if (outputMatches(candidate.value(), entry, level))
+			if (entry.recipeId().isPresent()) {
+				if (candidate.id().equals(entry.recipeId().get()))
+					return true;
+			} else if (outputMatches(candidate.value(), entry, level))
 				return true;
 		return false;
 	}
@@ -286,37 +346,54 @@ public final class RecipeFilterHelper {
 	 * honouring the entry's {@link OutputMatchMode}.
 	 */
 	private static boolean outputMatches(Recipe<?> recipe, RecipeFilterEntry entry, Level level) {
-		List<ItemStack> recorded = entry.nonEmptyOutputs();
-		if (recorded.isEmpty())
+		List<ItemStack> recordedItems = entry.nonEmptyOutputs();
+		List<FluidStack> recordedFluids = entry.nonEmptyFluidOutputs();
+		if (recordedItems.isEmpty() && recordedFluids.isEmpty())
 			return false;
 
-		List<ItemStack> recipeOutputs = new ArrayList<>();
+		List<ItemStack> recipeItems = new ArrayList<>();
 		ItemStack result = recipe.getResultItem(level.registryAccess());
 		if (!result.isEmpty())
-			recipeOutputs.add(result);
+			recipeItems.add(result);
+
+		List<FluidStack> recipeFluids = new ArrayList<>();
 		if (recipe instanceof ProcessingRecipe<?, ?> processing)
 			for (ProcessingOutput output : processing.getRollableResults()) {
 				ItemStack stack = output.getStack();
-				if (!stack.isEmpty() && !containsSame(recipeOutputs, stack))
-					recipeOutputs.add(stack);
+				if (!stack.isEmpty() && !containsSame(recipeItems, stack))
+					recipeItems.add(stack);
+			}
+		if (recipe instanceof ProcessingRecipe<?, ?> processing)
+			for (FluidStack fluid : processing.getFluidResults()) {
+				if (!fluid.isEmpty() && !containsSameFluid(recipeFluids, fluid))
+					recipeFluids.add(fluid);
 			}
 
 		switch (entry.outputMatch()) {
 		case EXACT -> {
 			// Compare as sets of item types: duplicate recordings must not match
 			// a recipe with extra distinct outputs (recorded [A,A] vs [A,B]).
-			List<ItemStack> recordedDistinct = distinct(recorded);
-			List<ItemStack> recipeDistinct = distinct(recipeOutputs);
-			if (recipeDistinct.size() != recordedDistinct.size())
+			List<ItemStack> recordedItemDistinct = distinct(recordedItems);
+			List<ItemStack> recipeItemDistinct = distinct(recipeItems);
+			List<FluidStack> recordedFluidDistinct = distinctFluids(recordedFluids);
+			List<FluidStack> recipeFluidDistinct = distinctFluids(recipeFluids);
+			if (recipeItemDistinct.size() != recordedItemDistinct.size()
+				|| recipeFluidDistinct.size() != recordedFluidDistinct.size())
 				return false;
-			for (ItemStack r : recordedDistinct)
-				if (!containsSame(recipeDistinct, r))
+			for (ItemStack r : recordedItemDistinct)
+				if (!containsSame(recipeItemDistinct, r))
+					return false;
+			for (FluidStack r : recordedFluidDistinct)
+				if (!containsSameFluid(recipeFluidDistinct, r))
 					return false;
 			return true;
 		}
 		case CONTAINS -> {
-			for (ItemStack r : recorded)
-				if (!containsSame(recipeOutputs, r))
+			for (ItemStack r : recordedItems)
+				if (!containsSame(recipeItems, r))
+					return false;
+			for (FluidStack r : recordedFluids)
+				if (!containsSameFluid(recipeFluids, r))
 					return false;
 			return true;
 		}
@@ -327,6 +404,21 @@ public final class RecipeFilterHelper {
 	private static boolean containsSame(List<ItemStack> stacks, ItemStack stack) {
 		for (ItemStack s : stacks)
 			if (ItemHelper.sameItem(s, stack))
+				return true;
+		return false;
+	}
+
+	private static List<FluidStack> distinctFluids(List<FluidStack> stacks) {
+		List<FluidStack> result = new ArrayList<>();
+		for (FluidStack stack : stacks)
+			if (!containsSameFluid(result, stack))
+				result.add(stack);
+		return result;
+	}
+
+	private static boolean containsSameFluid(List<FluidStack> stacks, FluidStack stack) {
+		for (FluidStack s : stacks)
+			if (FluidStack.isSameFluid(s, stack))
 				return true;
 		return false;
 	}

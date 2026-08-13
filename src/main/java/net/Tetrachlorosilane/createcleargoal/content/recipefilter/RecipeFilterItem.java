@@ -22,6 +22,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
 /**
@@ -98,8 +100,10 @@ public class RecipeFilterItem extends FilterItem {
 
 	/**
 	 * Builds an entry from a recipe (JEI import): snapshots the first item of
-	 * each ingredient and the recipe's outputs, capped to the GUI slot counts so
-	 * the stored entry always matches what the editor shows and edits.
+	 * each ingredient, the first fluid of each fluid ingredient, and the
+	 * recipe's item/fluid outputs. Imported entries are matched by their
+	 * {@code recipeId} at runtime, so tag ingredients and fluid ingredients keep
+	 * their full recipe semantics instead of being reduced to one stack.
 	 */
 	public static RecipeFilterEntry fromRecipe(ResourceLocation recipeId, Recipe<?> recipe,
 		HolderLookup.Provider registries) {
@@ -111,21 +115,45 @@ public class RecipeFilterItem extends FilterItem {
 			if (inputs.size() >= RecipeFilterMenu.INPUT_SLOTS)
 				break;
 		}
+
 		List<ItemStack> outputs = new ArrayList<>();
 		ItemStack result = recipe.getResultItem(registries);
 		if (!result.isEmpty())
 			outputs.add(result);
+
+		List<FluidStack> fluidInputs = new ArrayList<>();
+		List<FluidStack> fluidOutputs = new ArrayList<>();
 		if (recipe instanceof ProcessingRecipe<?, ?> processing) {
+			for (SizedFluidIngredient ingredient : processing.getFluidIngredients()) {
+				FluidStack[] fluids = ingredient.getFluids();
+				if (fluids.length > 0 && !fluids[0].isEmpty())
+					fluidInputs.add(fluids[0].copy());
+				if (fluidInputs.size() >= RecipeFilterMenu.MAX_FLUID_INPUTS)
+					break;
+			}
 			for (ProcessingOutput output : processing.getRollableResults()) {
-				if (outputs.size() >= RecipeFilterMenu.OUTPUT_SLOTS)
+				if (outputs.size() >= RecipeFilterMenu.MAX_ITEM_OUTPUTS)
 					break;
 				ItemStack stack = output.getStack();
 				if (!stack.isEmpty() && outputs.stream().noneMatch(o -> ItemStack.isSameItem(o, stack)))
 					outputs.add(stack);
 			}
+			for (FluidStack fluid : processing.getFluidResults()) {
+				if (fluidOutputs.size() >= RecipeFilterMenu.MAX_FLUID_OUTPUTS)
+					break;
+				if (!fluid.isEmpty() && fluidOutputs.stream().noneMatch(o -> FluidStack.isSameFluid(o, fluid)))
+					fluidOutputs.add(fluid.copy());
+			}
 		}
-		return RecipeFilterEntry.ofRecipe(
-			outputs.isEmpty() ? "" : outputs.get(0).getHoverName().getString(), recipeId, inputs, outputs);
+
+		String defaultName;
+		if (!outputs.isEmpty())
+			defaultName = outputs.get(0).getHoverName().getString();
+		else if (!fluidOutputs.isEmpty())
+			defaultName = fluidOutputs.get(0).getHoverName().getString();
+		else
+			defaultName = "";
+		return RecipeFilterEntry.ofRecipe(defaultName, recipeId, inputs, outputs, fluidInputs, fluidOutputs);
 	}
 
 	// --- FilterItem overrides ---
@@ -193,12 +221,21 @@ public class RecipeFilterItem extends FilterItem {
 		List<ItemStack> inputs = new ArrayList<>();
 		for (int i = 0; i < RecipeFilterMenu.INPUT_SLOTS; i++)
 			inputs.add(handler.getStackInSlot(i));
+
 		List<ItemStack> outputs = new ArrayList<>();
 		for (int i = 0; i < RecipeFilterMenu.OUTPUT_SLOTS; i++) {
 			ItemStack out = handler.getStackInSlot(RecipeFilterMenu.INPUT_SLOTS + i);
 			if (!out.isEmpty())
 				outputs.add(out);
 		}
-		return template.withContents(inputs, outputs);
+
+		// Imported basin recipes may have four item outputs while the GUI exposes
+		// three. Preserve any extra imported outputs so saving an imported entry
+		// does not silently truncate it back to three.
+		List<ItemStack> storedOutputs = template.nonEmptyOutputs();
+		for (int i = RecipeFilterMenu.OUTPUT_SLOTS; i < storedOutputs.size() && i < RecipeFilterMenu.MAX_ITEM_OUTPUTS; i++)
+			outputs.add(storedOutputs.get(i));
+
+		return template.withContents(inputs, outputs, template.fluidInputs(), template.fluidOutputs());
 	}
 }

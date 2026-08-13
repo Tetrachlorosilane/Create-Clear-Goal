@@ -1,0 +1,13 @@
+{
+  "itemGroup.createcleargoal": "机械动力 | 正中靶心",
+  "item.createcleargoal.recipe_filter": "配方过滤器",
+  "recipe_filter.summary": "已记录 %1$s 个配方",
+  "recipe_filter.new_entry": "新建配方",
+  "recipe_filter.delete": "删除配方",
+  "recipe_filter.mode.block": "阻止记录的配方",
+  "recipe_filter.mode.allow_only": "仅允许记录的配方",
+  "recipe_filter.mode.lock": "按输入锁定",
+  "recipe_filter.match.exact": "精确匹配产物",
+  "recipe_filter.match.contains": "包含记录中的产物",
+  "recipe_filter.import_failed": "未找到要导入的配方"
+}

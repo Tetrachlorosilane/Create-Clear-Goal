@@ -30,7 +30,12 @@ public class RecipeFilterMenu extends AbstractFilterMenu {
 
 	public static final int ENTRIES = 9;
 	public static final int INPUT_SLOTS = 9;
+	/** GUI output slots; imported basin recipes may store one more hidden output. */
 	public static final int OUTPUT_SLOTS = 3;
+	public static final int MAX_ITEM_OUTPUTS = 4;
+	public static final int MAX_FLUID_INPUTS = 2;
+	public static final int MAX_FLUID_OUTPUTS = 2;
+	public static final int MAX_NAME_LENGTH = 64;
 	public static final int TOTAL_SLOTS = INPUT_SLOTS + OUTPUT_SLOTS;
 
 	private final DataSlot selectedIndex;
@@ -125,6 +130,10 @@ public class RecipeFilterMenu extends AbstractFilterMenu {
 	public void setName(int index, String name) {
 		if (index != getSelectedIndex())
 			return;
+		if (name == null)
+			name = "";
+		if (name.length() > MAX_NAME_LENGTH)
+			name = name.substring(0, MAX_NAME_LENGTH);
 		RecipeFilterEntry edited = RecipeFilterItem.fromHandler(getTemplate(index), ghostInventory).withName(name);
 		RecipeFilterItem.setEntry(contentHolder, index, edited);
 		while (templates.size() <= index)
@@ -173,12 +182,20 @@ public class RecipeFilterMenu extends AbstractFilterMenu {
 		List<RecipeFilterEntry> entries = new ArrayList<>(RecipeFilterItem.getEntries(contentHolder));
 		if (entries.size() >= ENTRIES)
 			return;
+		int index = entries.size();
 		entries.add(entry);
 		RecipeFilterItem.setEntries(contentHolder, entries);
-		while (templates.size() <= entries.size() - 1)
+		while (templates.size() <= index)
 			templates.add(RecipeFilterEntry.empty());
-		templates.set(entries.size() - 1, entry);
-		selectEntry(entries.size() - 1);
+		templates.set(index, entry);
+		// Selecting must NOT save the old selection onto the just-imported slot:
+		// when the old selection is the trailing "new recipe" placeholder, its
+		// index equals the import's new index and a save would overwrite the
+		// freshly imported entry (the reported "JEI import does not show" bug).
+		if (getSelectedIndex() != index)
+			saveCurrentEntry();
+		selectedIndex.set(index);
+		loadSelectedEntry();
 	}
 
 	public void saveCurrentEntry() {
