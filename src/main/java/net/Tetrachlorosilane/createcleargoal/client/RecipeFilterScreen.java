@@ -73,6 +73,12 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 		// delete button at the right end of the entry list row
 		deleteButton = new IconButton(x + 182, y + 24, ModIcons.I_DELETE);
 		deleteButton.withCallback(() -> {
+			// Create's AbstractSimiContainerScreen.mouseClicked() clears the
+			// EditBox focus before this callback runs, so an in-flight name edit
+			// would otherwise be committed by the next containerTick onto the
+			// entry that becomes selected after the deletion. Discard it instead.
+			nameWasFocused = false;
+			nameBox.setFocused(false);
 			// apply locally for instant feedback; the server confirms via packet
 			menu.deleteSelectedEntry();
 			CatnipServices.NETWORK.sendToServer(new RecipeFilterDeletePacket());
@@ -113,6 +119,12 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 		resetButton = new IconButton(x + ModGuiTextures.RECIPE_FILTER_BG.getWidth() - 62,
 			y + ModGuiTextures.RECIPE_FILTER_BG.getHeight() - 24, AllIcons.I_TRASH);
 		resetButton.withCallback(() -> {
+			// The click already stole the EditBox focus (see deleteButton), so the
+			// pending name edit must be discarded explicitly: otherwise the next
+			// containerTick would commit the stale name onto the just-cleared
+			// filter, re-creating an entry that only carries that name.
+			nameWasFocused = false;
+			nameBox.setFocused(false);
 			// clear all configuration locally and confirm on the server
 			menu.clearContents();
 			CatnipServices.NETWORK.sendToServer(new RecipeFilterClearPacket());
@@ -120,6 +132,11 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 		confirmButton = new IconButton(x + ModGuiTextures.RECIPE_FILTER_BG.getWidth() - 33,
 			y + ModGuiTextures.RECIPE_FILTER_BG.getHeight() - 24, AllIcons.I_CONFIRM);
 		confirmButton.withCallback(() -> {
+			// Same focus-stealing: by the time this runs, nameBox.isFocused() is
+			// already false and onClose() would miss the in-flight edit. Commit it
+			// here (commitName resets nameWasFocused, so onClose won't re-commit).
+			if (nameWasFocused || nameBox.isFocused())
+				commitName();
 			if (minecraft != null && minecraft.player != null)
 				minecraft.player.closeContainer();
 		});
@@ -135,8 +152,8 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 			nameWasFocused = true;
 		} else {
 			if (nameWasFocused) {
+				// commitName resets nameWasFocused itself
 				commitName();
-				nameWasFocused = false;
 			} else {
 				// keep the name box in sync with the selected entry when not editing
 				String display = getEntryDisplayName();
@@ -197,7 +214,10 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 
 	@Override
 	public void onClose() {
-		if (nameBox.isFocused())
+		// Esc or any other close path: commit an in-flight name edit. The focus
+		// may already be gone (buttons steal it before their callback runs), so
+		// also honour nameWasFocused; commitName resets it to avoid re-commits.
+		if (nameWasFocused || nameBox.isFocused())
 			commitName();
 		super.onClose();
 	}
@@ -209,6 +229,7 @@ public class RecipeFilterScreen extends AbstractSimiContainerScreen<RecipeFilter
 		menu.setName(menu.getSelectedIndex(), name);
 		CatnipServices.NETWORK.sendToServer(new RecipeFilterNamePacket(menu.getSelectedIndex(), name));
 		nameBox.setFocused(false);
+		nameWasFocused = false;
 	}
 
 	private String getEntryDisplayName() {

@@ -10,12 +10,10 @@ import net.minecraft.world.item.Item;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
-import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -32,14 +30,15 @@ public class Createcleargoal {
 	public static final DeferredItem<RecipeFilterItem> RECIPE_FILTER =
 		ITEMS.register("recipe_filter", () -> new RecipeFilterItem(new Item.Properties().stacksTo(1)));
 
-	public static final DeferredHolder<CreativeModeTab, CreativeModeTab> CREATIVE_TAB =
+	static {
 		CREATIVE_MODE_TABS.register("main", () -> CreativeModeTab.builder()
 			.title(Component.translatable("itemGroup.createcleargoal"))
 			.icon(() -> RECIPE_FILTER.get().getDefaultInstance())
 			.displayItems((parameters, output) -> output.accept(RECIPE_FILTER.get()))
 			.build());
+	}
 
-	public Createcleargoal(IEventBus modEventBus, ModContainer modContainer) {
+	public Createcleargoal(IEventBus modEventBus) {
 		modEventBus.addListener(this::commonSetup);
 
 		ITEMS.register(modEventBus);

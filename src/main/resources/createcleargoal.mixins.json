@@ -8,6 +8,7 @@
     "BasinOperatingBlockEntityAccessor",
     "BasinOperatingBlockEntityMixin",
     "FilterItemStackMixin",
+    "ListFilterItemStackMixin",
     "MechanicalMixerBlockEntityMixin",
     "PressingBehaviourMixin",
     "SawBlockEntityMixin"

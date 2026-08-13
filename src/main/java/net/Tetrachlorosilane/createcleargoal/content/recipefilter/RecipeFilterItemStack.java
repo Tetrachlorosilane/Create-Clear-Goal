@@ -1,10 +1,6 @@
 package net.Tetrachlorosilane.createcleargoal.content.recipefilter;
 
-import java.util.List;
-
 import com.simibubi.create.content.logistics.filter.FilterItemStack;
-
-import net.Tetrachlorosilane.createcleargoal.AllDataComponents;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -20,15 +16,8 @@ import net.neoforged.neoforge.fluids.FluidStack;
  */
 public class RecipeFilterItemStack extends FilterItemStack {
 
-	private final List<RecipeFilterEntry> entries;
-
 	public RecipeFilterItemStack(ItemStack filter) {
 		super(filter);
-		entries = filter.getOrDefault(AllDataComponents.RECIPE_FILTER_ENTRIES.get(), List.of());
-	}
-
-	public List<RecipeFilterEntry> getEntries() {
-		return entries;
 	}
 
 	@Override

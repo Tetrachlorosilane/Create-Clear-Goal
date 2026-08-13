@@ -5,8 +5,8 @@ import java.util.List;
 import java.util.Optional;
 
 import com.simibubi.create.content.kinetics.saw.SawBlockEntity;
+import com.simibubi.create.content.logistics.filter.ListFilterItem;
 import com.simibubi.create.content.processing.basin.BasinBlockEntity;
-import com.simibubi.create.content.processing.basin.BasinRecipe;
 import com.simibubi.create.content.processing.recipe.ProcessingOutput;
 import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
 import com.simibubi.create.foundation.blockEntity.behaviour.filtering.FilteringBehaviour;
@@ -19,7 +19,12 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.level.Level;
 
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.ItemStackHandler;
 
 /**
  * Core restriction logic for the recipe filter, driven by the filter's
@@ -146,17 +151,80 @@ public final class RecipeFilterHelper {
 	}
 
 	/**
-	 * Whether the basin currently satisfies an imported entry's recipe. Uses
-	 * Create's own recipe matching when the recipe still exists, so tag
-	 * ingredients and fluid ingredients retain their full semantics. If the
-	 * recipe was removed, falls back to the recorded item inputs.
+	 * Whether the basin currently satisfies an imported entry's recipe
+	 * <b>inputs</b> (item types and fluids only). This deliberately ignores the
+	 * recipe's heat requirement and the basin's output space: LOCK gates on
+	 * "do the inputs match the recorded recipe" alone, then decides run-vs-halt
+	 * from the recipe's actual availability - it must never fall back to other
+	 * recipes once the recorded inputs are present. If the recipe was removed,
+	 * falls back to the recorded item inputs.
 	 */
 	private static boolean basinRecipeInputsMatch(RecipeManager manager, BasinBlockEntity basin,
 		RecipeFilterEntry entry) {
 		Optional<RecipeHolder<?>> holder = manager.byKey(entry.recipeId().orElseThrow());
 		if (holder.isEmpty())
 			return inputsMatch(entry, basinInputs(basin));
-		return BasinRecipe.match(basin, holder.get().value());
+		return basinInputsSatisfy(basin, holder.get().value());
+	}
+
+	/**
+	 * Replicates Create's own input test ({@code BasinRecipe.apply} test pass)
+	 * minus the heat requirement and the output-space check: every item
+	 * ingredient must be found in the basin's item handler and every fluid
+	 * ingredient must be satisfiable from its tanks. Tag ingredients and fluid
+	 * ingredients therefore keep their full recipe semantics.
+	 */
+	private static boolean basinInputsSatisfy(BasinBlockEntity basin, Recipe<?> recipe) {
+		Level level = basin.getLevel();
+		if (level == null)
+			return false;
+		IItemHandler items = level.getCapability(Capabilities.ItemHandler.BLOCK, basin.getBlockPos(), null);
+		IFluidHandler fluids = level.getCapability(Capabilities.FluidHandler.BLOCK, basin.getBlockPos(), null);
+		if (items == null || fluids == null)
+			return false;
+
+		int[] extractedItems = new int[items.getSlots()];
+		for (Ingredient ingredient : recipe.getIngredients()) {
+			boolean found = false;
+			for (int slot = 0; slot < items.getSlots(); slot++) {
+				ItemStack stack = items.getStackInSlot(slot);
+				if (stack.getCount() <= extractedItems[slot])
+					continue;
+				if (!ingredient.test(stack))
+					continue;
+				extractedItems[slot]++;
+				found = true;
+				break;
+			}
+			if (!found)
+				return false;
+		}
+
+		List<SizedFluidIngredient> fluidIngredients = recipe instanceof ProcessingRecipe<?, ?> processing
+			? processing.getFluidIngredients()
+			: List.of();
+		int[] extractedFluids = new int[fluids.getTanks()];
+		for (SizedFluidIngredient fluidIngredient : fluidIngredients) {
+			int amountRequired = fluidIngredient.amount();
+			boolean found = false;
+			for (int tank = 0; tank < fluids.getTanks(); tank++) {
+				FluidStack fluidStack = fluids.getFluidInTank(tank);
+				if (fluidStack.getAmount() <= extractedFluids[tank])
+					continue;
+				if (!fluidIngredient.test(fluidStack))
+					continue;
+				int drained = Math.min(amountRequired, fluidStack.getAmount());
+				amountRequired -= drained;
+				extractedFluids[tank] += drained;
+				if (amountRequired == 0) {
+					found = true;
+					break;
+				}
+			}
+			if (!found)
+				return false;
+		}
+		return true;
 	}
 
 	/**
@@ -260,32 +328,62 @@ public final class RecipeFilterHelper {
 	private static ItemStack filterStackOf(FilteringBehaviour filtering) {
 		if (filtering == null)
 			return null;
-		ItemStack filterStack = filtering.getFilter();
-		if (!(filterStack.getItem() instanceof RecipeFilterItem))
-			return null;
-		return filterStack;
+		return findRecipeFilter(filtering.getFilter(), 0);
 	}
 
+	/**
+	 * Finds the actual recipe filter behind a filter slot. Besides a directly
+	 * placed RecipeFilterItem, this also walks into Create's list filter so the
+	 * item can be nested inside one. The list-filter mixin keeps nested recipe
+	 * filters out of Create's ordinary allow/deny item matching.
+	 */
+	private static ItemStack findRecipeFilter(ItemStack stack, int depth) {
+		if (stack.isEmpty() || depth > 4)
+			return null;
+		if (stack.getItem() instanceof RecipeFilterItem)
+			return stack;
+		if (stack.getItem() instanceof ListFilterItem listFilter) {
+			ItemStackHandler contents = listFilter.getFilterItemHandler(stack);
+			for (int i = 0; i < contents.getSlots(); i++) {
+				ItemStack nested = findRecipeFilter(contents.getStackInSlot(i), depth + 1);
+				if (nested != null)
+					return nested;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * BLOCK / ALLOW_ONLY gate for a candidate recipe. An entry matches the
+	 * candidate when it IS the imported recipe (recipeId anchor, keeps tag /
+	 * fluid / 4-output semantics exact) OR when its recorded outputs match the
+	 * candidate's outputs per the entry's {@link OutputMatchMode}. The OR keeps
+	 * the per-entry Exact/Contains mode meaningful for imported recipes: e.g.
+	 * BLOCK + Exact on an imported "A -> B" also removes a different "C -> B"
+	 * candidate. If the recorded recipe no longer exists, output matching alone
+	 * still applies.
+	 */
 	private static boolean matchesAnyEntry(List<RecipeFilterEntry> entries, Recipe<?> candidate, RecipeManager manager,
 		Level level) {
-		for (RecipeFilterEntry entry : entries)
+		for (RecipeFilterEntry entry : entries) {
+			boolean byId = false;
 			if (entry.recipeId().isPresent()) {
 				Optional<RecipeHolder<?>> holder = manager.byKey(entry.recipeId().get());
-				if (holder.isPresent() && holder.get().value() == candidate)
-					return true;
-			} else if (outputMatches(candidate, entry, level))
+				byId = holder.isPresent() && holder.get().value() == candidate;
+			}
+			if (byId || outputMatches(candidate, entry, level))
 				return true;
+		}
 		return false;
 	}
 
 	private static boolean matchesAnyEntry(List<RecipeFilterEntry> entries, RecipeHolder<? extends Recipe<?>> candidate,
 		Level level) {
-		for (RecipeFilterEntry entry : entries)
-			if (entry.recipeId().isPresent()) {
-				if (candidate.id().equals(entry.recipeId().get()))
-					return true;
-			} else if (outputMatches(candidate.value(), entry, level))
+		for (RecipeFilterEntry entry : entries) {
+			boolean byId = entry.recipeId().isPresent() && candidate.id().equals(entry.recipeId().get());
+			if (byId || outputMatches(candidate.value(), entry, level))
 				return true;
+		}
 		return false;
 	}
 

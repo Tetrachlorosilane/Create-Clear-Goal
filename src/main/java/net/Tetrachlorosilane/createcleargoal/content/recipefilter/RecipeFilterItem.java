@@ -76,26 +76,24 @@ public class RecipeFilterItem extends FilterItem {
 		setEntries(stack, entries);
 	}
 
-	/** Replaces or appends an entry; returns the actual index it ended up at. */
-	public static int setEntry(ItemStack stack, int index, RecipeFilterEntry entry) {
+	/** Replaces or appends an entry. */
+	public static void setEntry(ItemStack stack, int index, RecipeFilterEntry entry) {
 		List<RecipeFilterEntry> entries = new ArrayList<>(getEntries(stack));
 		if (index < 0 || index >= RecipeFilterMenu.ENTRIES)
-			return -1;
+			return;
 		while (entries.size() <= index)
 			entries.add(RecipeFilterEntry.empty());
 		entries.set(index, entry);
 		setEntries(stack, entries);
-		return index;
 	}
 
-	/** Removes an entry and returns true if it existed. */
-	public static boolean removeEntry(ItemStack stack, int index) {
+	/** Removes an entry. */
+	public static void removeEntry(ItemStack stack, int index) {
 		List<RecipeFilterEntry> entries = new ArrayList<>(getEntries(stack));
 		if (index < 0 || index >= entries.size())
-			return false;
+			return;
 		entries.remove(index);
 		setEntries(stack, entries);
-		return true;
 	}
 
 	/**
