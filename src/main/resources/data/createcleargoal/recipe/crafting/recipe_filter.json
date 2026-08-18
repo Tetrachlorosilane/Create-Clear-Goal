@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": {
+      "item": "minecraft:redstone"
+    },
+    "S": {
+      "item": "minecraft:crafting_table"
+    }
+  },
+  "pattern": [
+    "ASA"
+  ],
+  "result": {
+    "count": 1,
+    "id": "createcleargoal:recipe_filter"
+  }
+}

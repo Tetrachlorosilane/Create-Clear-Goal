@@ -1,6 +1,10 @@
 {
   "itemGroup.createcleargoal": "机械动力 | 正中靶心",
   "item.createcleargoal.recipe_filter": "配方过滤器",
+  "item.createcleargoal.product_return_station": "产品返回站",
+  "block.createcleargoal.product_return_station": "产品返回站",
+  "block.createcleargoal.bulk_factory_gauge": "大宗工厂仪表",
+  "createcleargoal.bulk_factory_gauge.target_amount": "大宗目标数量",
   "recipe_filter.summary": "已记录 %1$s 个配方",
   "recipe_filter.new_entry": "新建配方",
   "recipe_filter.delete": "删除配方",
@@ -9,5 +13,14 @@
   "recipe_filter.mode.lock": "按输入锁定",
   "recipe_filter.match.exact": "精确匹配产物",
   "recipe_filter.match.contains": "包含记录中的产物",
-  "recipe_filter.import_failed": "未找到要导入的配方"
+  "recipe_filter.import_failed": "未找到要导入的配方",
+  "createcleargoal.product_return_station.promises_expire_title": "承诺过期时间",
+  "createcleargoal.product_return_station.promises_do_not_expire": "承诺永不过期",
+  "createcleargoal.product_return_station.no_open_promises": "暂无待处理承诺",
+  "createcleargoal.product_return_station.no_open_promises_tip": "承诺由返回站独立跟踪，过期或完成时会被清除。",
+  "createcleargoal.product_return_station.promised_items": "待处理承诺",
+  "createcleargoal.product_return_station.promise_total": "当前承诺总数：%s",
+  "createcleargoal.product_return_station.input_address": "输入地址",
+  "createcleargoal.product_return_station.output_address": "输出地址",
+  "createcleargoal.product_return_station.save_and_close": "保存并关闭"
 }

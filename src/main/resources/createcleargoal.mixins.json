@@ -7,13 +7,21 @@
   "mixins": [
     "BasinOperatingBlockEntityAccessor",
     "BasinOperatingBlockEntityMixin",
+    "BlockAccessor",
+    "FactoryPanelBehaviourMixin",
+    "FactoryPanelBlockMixin",
     "FilterItemStackMixin",
     "ListFilterItemStackMixin",
     "MechanicalMixerBlockEntityMixin",
+    "PackagerBlockEntityMixin",
+    "PackagerBlockMixin",
     "PressingBehaviourMixin",
+    "RequestPromiseQueueMixin",
     "SawBlockEntityMixin"
   ],
   "client": [
+    "FactoryPanelEffectPacketMixin",
+    "ValueSettingsClientMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -120,10 +120,15 @@ public class RecipeFilterMenu extends AbstractFilterMenu {
 		outputMatchSlot.set(mode.ordinal());
 		int index = getSelectedIndex();
 		RecipeFilterEntry edited = RecipeFilterItem.fromHandler(getTemplate(index), ghostInventory).withOutputMatch(mode);
+		// Do not create an entry when only the match mode was changed on the
+		// trailing "new recipe" placeholder; keep the pending mode in the template
+		// so it applies once the player actually fills the entry.
+		if (isNewEntrySelected() && edited.isEmpty()) {
+			setTemplate(index, edited);
+			return;
+		}
 		RecipeFilterItem.setEntry(contentHolder, index, edited);
-		while (templates.size() <= index)
-			templates.add(RecipeFilterEntry.empty());
-		templates.set(index, edited);
+		setTemplate(index, edited);
 	}
 
 	/** Renames the selected entry, preserving any slots already filled. */
@@ -132,13 +137,16 @@ public class RecipeFilterMenu extends AbstractFilterMenu {
 			return;
 		if (name == null)
 			name = "";
+		name = name.trim();
 		if (name.length() > MAX_NAME_LENGTH)
 			name = name.substring(0, MAX_NAME_LENGTH);
 		RecipeFilterEntry edited = RecipeFilterItem.fromHandler(getTemplate(index), ghostInventory).withName(name);
+		// An empty rename on the trailing "new recipe" placeholder must not create
+		// a phantom empty entry; it is trimmed on close anyway.
+		if (isNewEntrySelected() && edited.isEmpty())
+			return;
 		RecipeFilterItem.setEntry(contentHolder, index, edited);
-		while (templates.size() <= index)
-			templates.add(RecipeFilterEntry.empty());
-		templates.set(index, edited);
+		setTemplate(index, edited);
 	}
 
 	/** Number of saved entries; an extra "new recipe" slot exists if this is below ENTRIES. */
@@ -159,6 +167,12 @@ public class RecipeFilterMenu extends AbstractFilterMenu {
 		if (index < templates.size())
 			return templates.get(index);
 		return RecipeFilterEntry.empty();
+	}
+
+	private void setTemplate(int index, RecipeFilterEntry entry) {
+		while (templates.size() <= index)
+			templates.add(RecipeFilterEntry.empty());
+		templates.set(index, entry);
 	}
 
 	// --- selection switching (server-side, driven by packets) ---
@@ -185,9 +199,7 @@ public class RecipeFilterMenu extends AbstractFilterMenu {
 		int index = entries.size();
 		entries.add(entry);
 		RecipeFilterItem.setEntries(contentHolder, entries);
-		while (templates.size() <= index)
-			templates.add(RecipeFilterEntry.empty());
-		templates.set(index, entry);
+		setTemplate(index, entry);
 		// Selecting must NOT save the old selection onto the just-imported slot:
 		// when the old selection is the trailing "new recipe" placeholder, its
 		// index equals the import's new index and a save would overwrite the
@@ -201,11 +213,13 @@ public class RecipeFilterMenu extends AbstractFilterMenu {
 	public void saveCurrentEntry() {
 		int index = selectedIndex.get();
 		RecipeFilterEntry edited = RecipeFilterItem.fromHandler(getTemplate(index), ghostInventory);
+		// Switching away from an untouched trailing "new recipe" placeholder must
+		// not materialise an empty entry in the item (it would shift the placeholder
+		// and make the delete button active on a phantom entry).
+		if (isNewEntrySelected() && edited.isEmpty())
+			return;
 		RecipeFilterItem.setEntry(contentHolder, index, edited);
-		// keep templates in sync so a later save round-trips the same name/mode
-		while (templates.size() <= index)
-			templates.add(RecipeFilterEntry.empty());
-		templates.set(index, edited);
+		setTemplate(index, edited);
 	}
 
 	private void loadSelectedEntry() {
