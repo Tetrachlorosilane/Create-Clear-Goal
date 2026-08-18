@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "create:factory_gauge"
+    },
+    {
+      "item": "create:polished_rose_quartz"
+    }
+  ],
+  "result": {
+    "count": 1,
+    "id": "createcleargoal:bulk_factory_gauge"
+  }
+}

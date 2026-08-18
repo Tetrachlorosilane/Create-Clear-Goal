@@ -2,6 +2,8 @@ package net.Tetrachlorosilane.createcleargoal;
 
 import java.util.Locale;
 
+import net.Tetrachlorosilane.createcleargoal.content.productreturn.ProductReturnStationConfigurePacket;
+import net.Tetrachlorosilane.createcleargoal.content.productreturn.ProductReturnStationOpenScreenPacket;
 import net.Tetrachlorosilane.createcleargoal.content.recipefilter.RecipeFilterClearPacket;
 import net.Tetrachlorosilane.createcleargoal.content.recipefilter.RecipeFilterDeletePacket;
 import net.Tetrachlorosilane.createcleargoal.content.recipefilter.RecipeFilterImportPacket;
@@ -26,7 +28,11 @@ public enum ModPackets implements BasePacketPayload.PacketTypeProvider {
 	SET_MODE(RecipeFilterModePacket.class, RecipeFilterModePacket.STREAM_CODEC),
 	SET_OUTPUT_MATCH(RecipeFilterOutputMatchPacket.class, RecipeFilterOutputMatchPacket.STREAM_CODEC),
 	DELETE_ENTRY(RecipeFilterDeletePacket.class, RecipeFilterDeletePacket.STREAM_CODEC),
-	CLEAR_ENTRIES(RecipeFilterClearPacket.class, RecipeFilterClearPacket.STREAM_CODEC);
+	CLEAR_ENTRIES(RecipeFilterClearPacket.class, RecipeFilterClearPacket.STREAM_CODEC),
+	CONFIGURE_PRODUCT_RETURN_STATION(ProductReturnStationConfigurePacket.class,
+		ProductReturnStationConfigurePacket.STREAM_CODEC),
+	OPEN_PRODUCT_RETURN_STATION(ProductReturnStationOpenScreenPacket.class,
+		ProductReturnStationOpenScreenPacket.STREAM_CODEC);
 
 	private final CatnipPacketRegistry.PacketType<?> type;
 

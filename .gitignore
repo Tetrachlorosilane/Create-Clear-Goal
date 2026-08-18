@@ -21,6 +21,7 @@ hs_err_pid*
 run
 
 agent.md
+Agents.md
 
 *.ps
 *.ps1

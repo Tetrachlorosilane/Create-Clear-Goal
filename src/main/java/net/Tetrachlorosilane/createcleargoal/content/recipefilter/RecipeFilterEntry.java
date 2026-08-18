@@ -141,18 +141,15 @@ public record RecipeFilterEntry(String name, Optional<ResourceLocation> recipeId
 		if (a.size() != b.size())
 			return false;
 		for (int i = 0; i < a.size(); i++)
-			if (!ItemStack.matches(a.get(i), b.get(i)))
+			if (!ItemStack.isSameItemSameComponents(a.get(i), b.get(i)))
 				return false;
 		return true;
 	}
 
 	private static int itemStacksHash(List<ItemStack> stacks) {
 		int result = 0;
-		for (ItemStack stack : stacks) {
-			int hash = 31 + stack.getItem().hashCode();
-			hash = 31 * hash + stack.getComponents().hashCode();
-			result = 31 * result + hash;
-		}
+		for (ItemStack stack : stacks)
+			result = 31 * result + ItemStack.hashItemAndComponents(stack);
 		return result;
 	}
 
@@ -160,7 +157,7 @@ public record RecipeFilterEntry(String name, Optional<ResourceLocation> recipeId
 		if (a.size() != b.size())
 			return false;
 		for (int i = 0; i < a.size(); i++)
-			if (!FluidStack.matches(a.get(i), b.get(i)))
+			if (!FluidStack.isSameFluidSameComponents(a.get(i), b.get(i)))
 				return false;
 		return true;
 	}

@@ -168,11 +168,11 @@ public final class RecipeFilterHelper {
 	}
 
 	/**
-	 * Replicates Create's own input test ({@code BasinRecipe.apply} test pass)
-	 * minus the heat requirement and the output-space check: every item
-	 * ingredient must be found in the basin's item handler and every fluid
-	 * ingredient must be satisfiable from its tanks. Tag ingredients and fluid
-	 * ingredients therefore keep their full recipe semantics.
+	 * Checks whether the basin currently contains the recorded recipe's input
+	 * <b>types</b> (items and fluids). Quantities are intentionally ignored:
+	 * recipe matching only cares about which item/fluid types are present, not
+	 * how many of each. Heat and output-space checks are also excluded, so this
+	 * is a pure LOCK gate rather than a "can run right now" test.
 	 */
 	private static boolean basinInputsSatisfy(BasinBlockEntity basin, Recipe<?> recipe) {
 		Level level = basin.getLevel();
@@ -183,18 +183,16 @@ public final class RecipeFilterHelper {
 		if (items == null || fluids == null)
 			return false;
 
-		int[] extractedItems = new int[items.getSlots()];
 		for (Ingredient ingredient : recipe.getIngredients()) {
+			if (ingredient.isEmpty())
+				continue;
 			boolean found = false;
 			for (int slot = 0; slot < items.getSlots(); slot++) {
 				ItemStack stack = items.getStackInSlot(slot);
-				if (stack.getCount() <= extractedItems[slot])
-					continue;
-				if (!ingredient.test(stack))
-					continue;
-				extractedItems[slot]++;
-				found = true;
-				break;
+				if (!stack.isEmpty() && ingredient.test(stack)) {
+					found = true;
+					break;
+				}
 			}
 			if (!found)
 				return false;
@@ -203,20 +201,11 @@ public final class RecipeFilterHelper {
 		List<SizedFluidIngredient> fluidIngredients = recipe instanceof ProcessingRecipe<?, ?> processing
 			? processing.getFluidIngredients()
 			: List.of();
-		int[] extractedFluids = new int[fluids.getTanks()];
 		for (SizedFluidIngredient fluidIngredient : fluidIngredients) {
-			int amountRequired = fluidIngredient.amount();
 			boolean found = false;
 			for (int tank = 0; tank < fluids.getTanks(); tank++) {
 				FluidStack fluidStack = fluids.getFluidInTank(tank);
-				if (fluidStack.getAmount() <= extractedFluids[tank])
-					continue;
-				if (!fluidIngredient.test(fluidStack))
-					continue;
-				int drained = Math.min(amountRequired, fluidStack.getAmount());
-				amountRequired -= drained;
-				extractedFluids[tank] += drained;
-				if (amountRequired == 0) {
+				if (!fluidStack.isEmpty() && fluidIngredient.test(fluidStack)) {
 					found = true;
 					break;
 				}

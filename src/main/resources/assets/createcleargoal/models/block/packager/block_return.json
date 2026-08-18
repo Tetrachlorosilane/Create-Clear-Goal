@@ -1,0 +1,6 @@
+{
+  "parent": "create:block/packager/block",
+  "textures": {
+    "2": "createcleargoal:block/packager_horizontal_return"
+  }
+}

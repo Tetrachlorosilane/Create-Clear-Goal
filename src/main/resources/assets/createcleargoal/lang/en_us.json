@@ -1,6 +1,10 @@
 {
   "itemGroup.createcleargoal": "Create ClearGoal",
   "item.createcleargoal.recipe_filter": "Recipe Filter",
+  "item.createcleargoal.product_return_station": "Product Return Station",
+  "block.createcleargoal.product_return_station": "Product Return Station",
+  "block.createcleargoal.bulk_factory_gauge": "Bulk Factory Gauge",
+  "createcleargoal.bulk_factory_gauge.target_amount": "Bulk target amount",
   "recipe_filter.summary": "%1$s recipe(s) recorded",
   "recipe_filter.new_entry": "New Recipe",
   "recipe_filter.delete": "Delete recipe",
@@ -9,5 +13,14 @@
   "recipe_filter.mode.lock": "Lock on input",
   "recipe_filter.match.exact": "Exact outputs",
   "recipe_filter.match.contains": "Contains outputs",
-  "recipe_filter.import_failed": "Recipe not found for import"
+  "recipe_filter.import_failed": "Recipe not found for import",
+  "createcleargoal.product_return_station.promises_expire_title": "Promises expire after",
+  "createcleargoal.product_return_station.promises_do_not_expire": "Promises never expire",
+  "createcleargoal.product_return_station.no_open_promises": "No open promises",
+  "createcleargoal.product_return_station.no_open_promises_tip": "Promises are tracked per station and cleared when expired or fulfilled.",
+  "createcleargoal.product_return_station.promised_items": "Promised items",
+  "createcleargoal.product_return_station.promise_total": "Total promised: %s",
+  "createcleargoal.product_return_station.input_address": "Input address",
+  "createcleargoal.product_return_station.output_address": "Output address",
+  "createcleargoal.product_return_station.save_and_close": "Save and close"
 }
