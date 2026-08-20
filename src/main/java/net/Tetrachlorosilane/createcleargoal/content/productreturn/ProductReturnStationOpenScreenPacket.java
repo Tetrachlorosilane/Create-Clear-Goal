@@ -18,7 +18,7 @@ import net.neoforged.api.distmarker.OnlyIn;
  * sync is not up to date.
  */
 public record ProductReturnStationOpenScreenPacket(BlockPos pos, String inputAddress, String outputAddress,
-	int promiseClearingInterval, int totalPromised) implements ClientboundPacketPayload {
+	int promiseClearingInterval, int totalPromised, boolean conflict) implements ClientboundPacketPayload {
 
 	public static final StreamCodec<ByteBuf, ProductReturnStationOpenScreenPacket> STREAM_CODEC =
 		StreamCodec.composite(
@@ -27,6 +27,7 @@ public record ProductReturnStationOpenScreenPacket(BlockPos pos, String inputAdd
 			ByteBufCodecs.STRING_UTF8, ProductReturnStationOpenScreenPacket::outputAddress,
 			ByteBufCodecs.VAR_INT, ProductReturnStationOpenScreenPacket::promiseClearingInterval,
 			ByteBufCodecs.VAR_INT, ProductReturnStationOpenScreenPacket::totalPromised,
+			ByteBufCodecs.BOOL, ProductReturnStationOpenScreenPacket::conflict,
 			ProductReturnStationOpenScreenPacket::new);
 
 	@Override
@@ -43,6 +44,7 @@ public record ProductReturnStationOpenScreenPacket(BlockPos pos, String inputAdd
 			be.outputAddress = outputAddress;
 			be.promiseClearingInterval = promiseClearingInterval;
 			be.lastReportedPromises = totalPromised;
+			be.conflict = conflict;
 			net.Tetrachlorosilane.createcleargoal.client.ProductReturnStationScreen.open(be);
 		}
 	}

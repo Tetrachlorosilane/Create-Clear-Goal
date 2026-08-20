@@ -4,6 +4,7 @@ import org.jetbrains.annotations.NotNull;
 
 import com.mojang.serialization.MapCodec;
 import com.simibubi.create.AllShapes;
+import net.createmod.catnip.data.Iterate;
 import com.simibubi.create.content.equipment.wrench.IWrenchable;
 import com.simibubi.create.content.logistics.packager.PackagerBlock;
 import com.simibubi.create.content.logistics.packager.PackagerBlockEntity;
@@ -37,8 +38,8 @@ import net.minecraft.world.phys.shapes.VoxelShape;
  * Product Return Station: a face-attached block that is placed on a Packager and
  * makes it enter "return phase" (rendered as the packager's linked/yellow state).
  * <p>
- * The model/art is currently reused from Create's Stock Link; custom art is still
- * needed.
+ * The model uses custom product return station art, with powered and unpowered
+ * variants driven by redstone signal.
  */
 public class ProductReturnStationBlock extends FaceAttachedHorizontalDirectionalBlock
 	implements IBE<ProductReturnStationBlockEntity>, ProperWaterloggedBlock, IWrenchable {
@@ -68,7 +69,7 @@ public class ProductReturnStationBlock extends FaceAttachedHorizontalDirectional
 		if (placed.getValue(FACE) == AttachFace.CEILING)
 			placed = placed.setValue(FACING, placed.getValue(FACING)
 				.getOpposite());
-		return withWater(placed.setValue(POWERED, false), context);
+		return withWater(placed.setValue(POWERED, getPower(placed, context.getLevel(), pos) > 0), context);
 	}
 
 	public static Direction getConnectedDirection(BlockState state) {
@@ -99,13 +100,43 @@ public class ProductReturnStationBlock extends FaceAttachedHorizontalDirectional
 	}
 
 	@Override
+	public void onPlace(BlockState pState, Level pLevel, BlockPos pPos, BlockState pOldState, boolean pMovedByPiston) {
+		updatePower(pLevel, pPos, pState);
+	}
+
+	@Override
+	public void neighborChanged(BlockState pState, Level pLevel, BlockPos pPos, Block pNeighborBlock,
+		BlockPos pNeighborPos, boolean pMovedByPiston) {
+		updatePower(pLevel, pPos, pState);
+	}
+
+	private static void updatePower(Level level, BlockPos pos, BlockState state) {
+		if (level.isClientSide)
+			return;
+		int power = getPower(state, level, pos);
+		boolean powered = power > 0;
+		if (state.getValue(POWERED) != powered)
+			level.setBlock(pos, state.setValue(POWERED, powered), Block.UPDATE_CLIENTS);
+		if (level.getBlockEntity(pos) instanceof ProductReturnStationBlockEntity be)
+			be.setRedstonePower(power);
+	}
+
+	public static int getPower(BlockState state, Level level, BlockPos pos) {
+		int power = 0;
+		for (Direction d : Iterate.directions)
+			if (d.getOpposite() != getConnectedDirection(state))
+				power = Math.max(power, level.getSignal(pos.relative(d), d));
+		return power;
+	}
+
+	@Override
 	protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player,
 		BlockHitResult hitResult) {
 		if (!level.isClientSide && player instanceof net.minecraft.server.level.ServerPlayer sp) {
 			if (level.getBlockEntity(pos) instanceof ProductReturnStationBlockEntity be) {
 				net.createmod.catnip.platform.CatnipServices.NETWORK.sendToClient(sp,
 					new ProductReturnStationOpenScreenPacket(pos, be.inputAddress, be.outputAddress,
-						be.promiseClearingInterval, be.lastReportedPromises));
+						be.promiseClearingInterval, be.lastReportedPromises, be.conflict));
 			}
 		}
 		return InteractionResult.SUCCESS;

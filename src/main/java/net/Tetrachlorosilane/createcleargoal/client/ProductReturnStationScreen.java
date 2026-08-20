@@ -112,6 +112,12 @@ public class ProductReturnStationScreen extends AbstractSimiScreen {
 		graphics.drawString(font, title,
 			x + ModGuiTextures.PRODUCT_RETURN_BG.getWidth() / 2 - font.width(title) / 2, y + 4, 0x3D3C48, false);
 
+		// Warn when this station shares its input address and priority with another station.
+		if (blockEntity.conflict) {
+			Component warning = Component.translatable("createcleargoal.product_return_station.conflict_warning");
+			graphics.drawString(font, warning, x + 8, y + 16, 0xFFAA00, false);
+		}
+
 		// Show the selected expiry value inside the scroll box, like factory gauge.
 		if (promiseExpiration != null) {
 			int state = promiseExpiration.getState();

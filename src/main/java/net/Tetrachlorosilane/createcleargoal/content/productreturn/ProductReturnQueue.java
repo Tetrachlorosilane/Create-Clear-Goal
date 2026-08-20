@@ -30,8 +30,12 @@ public class ProductReturnQueue {
 		add(new AddressPromise(item.copy(), count));
 	}
 
-	public void add(ItemStack item, int count, int ticksExisted) {
-		add(new AddressPromise(item.copy(), count, ticksExisted));
+	public void add(ItemStack item, int count, String outputAddress) {
+		add(new AddressPromise(item.copy(), count, outputAddress));
+	}
+
+	public void add(ItemStack item, int count, String outputAddress, int ticksExisted) {
+		add(new AddressPromise(item.copy(), count, outputAddress, ticksExisted));
 	}
 
 	private void add(AddressPromise promise) {
@@ -58,7 +62,8 @@ public class ProductReturnQueue {
 			if (promise.count() <= remaining) {
 				remaining -= promise.count();
 			} else {
-				leftovers.add(new AddressPromise(promise.item(), promise.count() - remaining, promise.ticksExisted()));
+				leftovers.add(new AddressPromise(promise.item(), promise.count() - remaining, promise.outputAddress(),
+					promise.ticksExisted()));
 				remaining = 0;
 			}
 		}
@@ -146,6 +151,6 @@ public class ProductReturnQueue {
 	public void load(List<AddressPromise> saved) {
 		clearAll();
 		for (AddressPromise promise : saved)
-			add(promise.item(), promise.count(), promise.ticksExisted());
+			add(promise.item(), promise.count(), promise.outputAddress(), promise.ticksExisted());
 	}
 }

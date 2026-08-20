@@ -8,6 +8,7 @@ import java.util.Map;
 import org.apache.commons.lang3.mutable.MutableBoolean;
 import org.jetbrains.annotations.Nullable;
 
+import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
 import com.simibubi.create.content.logistics.box.PackageItem;
 import com.simibubi.create.content.logistics.packager.InventorySummary;
 import com.simibubi.create.content.logistics.packager.PackagerBlockEntity;
@@ -18,6 +19,8 @@ import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -33,7 +36,7 @@ import net.minecraft.world.level.block.state.BlockState;
  * input address); changing the input address clears the queue and counts as a
  * re-placement. The station's sends do NOT modify Create's original promise queue.
  */
-public class ProductReturnStationBlockEntity extends SmartBlockEntity {
+public class ProductReturnStationBlockEntity extends SmartBlockEntity implements IHaveGoggleInformation {
 
 	public LogisticallyLinkedBehaviour behaviour;
 	public String inputAddress = "";
@@ -47,6 +50,12 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity {
 
 	/** Last total promised count sent to the client for the GUI indicator. */
 	public int lastReportedPromises;
+
+	/** True when another station with the same network+input address has the same redstone priority. */
+	public boolean conflict;
+
+	/** Redstone signal strength; higher = lower priority (Stock Link style). */
+	public int redstonePower;
 
 	/** Whether the client should receive a promise-count sync on the next lazy tick. */
 	boolean syncPromises;
@@ -104,6 +113,26 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity {
 		return null;
 	}
 
+	public void setRedstonePower(int power) {
+		if (redstonePower == power)
+			return;
+		redstonePower = power;
+		setChanged();
+		notifyUpdate();
+		if (!level.isClientSide)
+			ProductReturnStationManager.onRedstonePowerChanged(this);
+	}
+
+	@Override
+	public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
+		if (!conflict)
+			return false;
+		tooltip.add(Component.literal("    ")
+			.append(Component.translatable("createcleargoal.product_return_station.conflict_warning")
+				.withStyle(ChatFormatting.YELLOW)));
+		return true;
+	}
+
 	private int getPromiseExpiryTimeInTicks() {
 		if (promiseClearingInterval == -1)
 			return -1;
@@ -119,8 +148,8 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity {
 
 	// --- independent queue API (called from the manager) ---
 
-	public void addPromise(ItemStack item, int count) {
-		queue.add(item, count);
+	public void addPromise(ItemStack item, int count, String outputAddress) {
+		queue.add(item, count, outputAddress == null ? "" : outputAddress);
 		lastReportedPromises = queue.getTotalCount() + pendingCount;
 		syncPromises = false;
 		setChanged();
@@ -189,10 +218,28 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity {
 		// Build a single package from as many queued promises as fit. Multiple
 		// item types / promises are batched together, but never beyond one
 		// package's capacity (soft-coded via PackageItem.SLOTS and item stack size).
+		// Promises with different resolved output addresses are processed in
+		// separate lazy ticks (one package per output address).
 		InventorySummary available = packager.getAvailableItems();
+		List<AddressPromise> promises = queue.flatten();
+
+		// Pick the first output address that currently has enough stock, so one
+		// unavailable output cannot starve other outputs forever.
+		String targetOutput = null;
+		for (AddressPromise promise : promises) {
+			if (available.getCountOf(promise.item()) >= promise.count()) {
+				targetOutput = promise.outputAddress();
+				break;
+			}
+		}
+		if (targetOutput == null)
+			return;
+
 		Map<ItemKey, Integer> batchCounts = new HashMap<>();
 		int slotsUsed = 0;
-		for (AddressPromise promise : queue.flatten()) {
+		for (AddressPromise promise : promises) {
+			if (!targetOutput.equals(promise.outputAddress()))
+				continue;
 			ItemStack item = promise.item();
 			ItemKey key = new ItemKey(item);
 			int current = batchCounts.getOrDefault(key, 0);
@@ -217,7 +264,7 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity {
 				.stack();
 			int count = entry.getValue();
 			originalCounts.put(entry.getKey(), count);
-			requests.add(PackagingRequest.create(item, count, outputAddress, 0, new MutableBoolean(true), 0, 0, null));
+			requests.add(PackagingRequest.create(item, count, targetOutput, 0, new MutableBoolean(true), 0, 0, null));
 		}
 
 		// attemptToSend mutates the request list (removes fulfilled entries), so
@@ -256,6 +303,8 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity {
 		super.write(tag, registries, clientPacket);
 		tag.putString("InputAddress", inputAddress);
 		tag.putString("OutputAddress", outputAddress);
+		tag.putBoolean("Conflict", conflict);
+		tag.putInt("RedstonePower", redstonePower);
 		tag.putInt("PromiseClearingInterval", promiseClearingInterval);
 		if (clientPacket)
 			tag.putInt("TotalPromised", lastReportedPromises);
@@ -267,6 +316,7 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity {
 				CompoundTag entry = new CompoundTag();
 				entry.put("Item", promise.item().saveOptional(registries));
 				entry.putInt("Count", promise.count());
+				entry.putString("OutputAddress", promise.outputAddress());
 				entry.putInt("TicksExisted", promise.ticksExisted());
 				list.add(entry);
 			}
@@ -279,6 +329,8 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity {
 		super.read(tag, registries, clientPacket);
 		inputAddress = tag.getString("InputAddress");
 		outputAddress = tag.getString("OutputAddress");
+		conflict = tag.getBoolean("Conflict");
+		redstonePower = tag.getInt("RedstonePower");
 		promiseClearingInterval = tag.contains("PromiseClearingInterval")
 			? Math.max(-1, Math.min(31, tag.getInt("PromiseClearingInterval")))
 			: -1;
@@ -291,7 +343,8 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity {
 				CompoundTag entry = list.getCompound(i);
 				ItemStack item = ItemStack.parseOptional(registries, entry.getCompound("Item"));
 				if (!item.isEmpty())
-					saved.add(new AddressPromise(item, entry.getInt("Count"), entry.getInt("TicksExisted")));
+					saved.add(new AddressPromise(item, entry.getInt("Count"), entry.getString("OutputAddress"),
+						entry.getInt("TicksExisted")));
 			}
 			queue.load(saved);
 			pendingCount = Math.max(0, tag.getInt("PendingCount"));

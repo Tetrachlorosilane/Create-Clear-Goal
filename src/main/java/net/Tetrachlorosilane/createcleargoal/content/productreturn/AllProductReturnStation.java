@@ -1,6 +1,7 @@
 package net.Tetrachlorosilane.createcleargoal.content.productreturn;
 
 import net.Tetrachlorosilane.createcleargoal.Createcleargoal;
+import net.Tetrachlorosilane.createcleargoal.client.ProductReturnStationRenderer;
 
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.Item;
@@ -9,6 +10,10 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -17,8 +22,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 /**
  * Registration for the Product Return Station.
  * <p>
- * The block intentionally reuses the Stock Link model/textures for now; custom
- * art assets are still needed (see assets/createcleargoal/models/block/product_return_station*).
+ * Uses custom models/textures based on the Stock Link structure.
  */
 public class AllProductReturnStation {
 
@@ -58,5 +62,13 @@ public class AllProductReturnStation {
 	/** Convenience for mixins: matches any block that can act as a packager link/return station. */
 	public static boolean isProductReturnStation(net.minecraft.world.level.block.state.BlockState state) {
 		return state.getBlock() instanceof ProductReturnStationBlock;
+	}
+
+	@EventBusSubscriber(modid = Createcleargoal.MODID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.MOD)
+	public static class ClientEvents {
+		@SubscribeEvent
+		public static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
+			event.registerBlockEntityRenderer(PRODUCT_RETURN_STATION_BE.get(), ProductReturnStationRenderer::new);
+		}
 	}
 }
