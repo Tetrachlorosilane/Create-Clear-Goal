@@ -20,8 +20,10 @@
   "createcleargoal.product_return_station.no_open_promises_tip": "承诺由返回站独立跟踪，过期或完成时会被清除。",
   "createcleargoal.product_return_station.promised_items": "待处理承诺",
   "createcleargoal.product_return_station.promise_total": "当前承诺总数：%s",
-  "createcleargoal.product_return_station.input_address": "输入地址（支持正则，可使用捕获组）",
-  "createcleargoal.product_return_station.output_address": "输出地址（支持 $1 / ${name} 填充）",
+  "createcleargoal.product_return_station.input_address": "输入地址（默认 Create glob；以 regex: 开头启用 Java 正则）",
+  "createcleargoal.product_return_station.invalid_regex": "无效正则：%s（位置 %s）",
+  "createcleargoal.product_return_station.invalid_regex_saved": "已保存的输入正则无效，请重新配置",
+  "createcleargoal.product_return_station.output_address": "输出地址（regex: 模式下支持 $1 / ${name} 填充）",
   "createcleargoal.product_return_station.save_and_close": "保存并关闭",
   "createcleargoal.product_return_station.conflict_warning": "地址冲突：同优先级时选择未定义。"
 }

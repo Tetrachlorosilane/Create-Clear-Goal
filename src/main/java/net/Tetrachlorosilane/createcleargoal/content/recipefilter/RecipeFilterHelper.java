@@ -157,13 +157,13 @@ public final class RecipeFilterHelper {
 	 * "do the inputs match the recorded recipe" alone, then decides run-vs-halt
 	 * from the recipe's actual availability - it must never fall back to other
 	 * recipes once the recorded inputs are present. If the recipe was removed,
-	 * falls back to the recorded item inputs.
+	 * falls back to the recorded item/fluid input alternatives.
 	 */
 	private static boolean basinRecipeInputsMatch(RecipeManager manager, BasinBlockEntity basin,
 		RecipeFilterEntry entry) {
 		Optional<RecipeHolder<?>> holder = manager.byKey(entry.recipeId().orElseThrow());
 		if (holder.isEmpty())
-			return inputsMatch(entry, basinInputs(basin));
+			return entryInputsMatch(entry, basinInputs(basin), basinFluidInputs(basin));
 		return basinInputsSatisfy(basin, holder.get().value());
 	}
 
@@ -205,7 +205,9 @@ public final class RecipeFilterHelper {
 			boolean found = false;
 			for (int tank = 0; tank < fluids.getTanks(); tank++) {
 				FluidStack fluidStack = fluids.getFluidInTank(tank);
-				if (!fluidStack.isEmpty() && fluidIngredient.test(fluidStack)) {
+				// Use the inner FluidIngredient (not SizedFluidIngredient.test) so
+				// LOCK only checks fluid type, never the required amount.
+				if (!fluidStack.isEmpty() && fluidIngredient.ingredient().test(fluidStack)) {
 					found = true;
 					break;
 				}
@@ -307,7 +309,7 @@ public final class RecipeFilterHelper {
 	private static boolean sawRecipeInputMatches(RecipeManager manager, RecipeFilterEntry entry, ItemStack input) {
 		Optional<RecipeHolder<?>> holder = manager.byKey(entry.recipeId().orElseThrow());
 		if (holder.isEmpty())
-			return sawInputMatches(entry, input);
+			return sawInputAlternativesMatch(entry, input);
 		List<Ingredient> ingredients = holder.get().value().getIngredients();
 		return !ingredients.isEmpty() && ingredients.get(0).test(input);
 	}
@@ -387,6 +389,142 @@ public final class RecipeFilterHelper {
 		return inputs;
 	}
 
+	/** Non-empty tanks of the basin's fluid input handler. */
+	private static List<FluidStack> basinFluidInputs(BasinBlockEntity basin) {
+		Level level = basin.getLevel();
+		if (level == null)
+			return List.of();
+		IFluidHandler fluids = level.getCapability(Capabilities.FluidHandler.BLOCK, basin.getBlockPos(), null);
+		if (fluids == null)
+			return List.of();
+		List<FluidStack> result = new ArrayList<>();
+		for (int i = 0; i < fluids.getTanks(); i++) {
+			FluidStack stack = fluids.getFluidInTank(i);
+			if (!stack.isEmpty())
+				result.add(stack);
+		}
+		return result;
+	}
+
+	/**
+	 * LOCK gate fallback used when an imported entry's recipe has been removed:
+	 * matches the entry's saved item and fluid input types against the basin.
+	 * Quantities are ignored; a pure-fluid recipe only checks the recorded fluid
+	 * types, and a mixed recipe checks both item and fluid type sets.
+	 */
+	private static boolean entryInputsMatch(RecipeFilterEntry entry, List<ItemStack> machineItems,
+		List<FluidStack> machineFluids) {
+		List<List<ItemStack>> itemGroups = nonEmptyAlternatives(entry.inputAlternatives(), entry.inputs());
+		List<List<FluidStack>> fluidGroups = nonEmptyFluidAlternatives(entry.fluidInputAlternatives(), entry.fluidInputs());
+		if (itemGroups.isEmpty() && fluidGroups.isEmpty())
+			return false;
+		if (!itemGroups.isEmpty() && !itemAlternativesMatch(itemGroups, machineItems))
+			return false;
+		if (!fluidGroups.isEmpty() && !fluidAlternativesMatch(fluidGroups, machineFluids))
+			return false;
+		return true;
+	}
+
+	/**
+	 * Type-only item match for saved ingredient alternatives. Every recorded
+	 * ingredient group must be satisfied by at least one machine item, and every
+	 * machine item must be legal for at least one recorded group. Quantities are
+	 * ignored; the same machine item may satisfy multiple identical ingredient
+	 * groups.
+	 */
+	private static boolean itemAlternativesMatch(List<List<ItemStack>> groups, List<ItemStack> machineItems) {
+		List<ItemStack> machine = distinct(machineItems);
+		if (machine.isEmpty())
+			return false;
+		for (ItemStack machineStack : machine) {
+			boolean legal = false;
+			for (List<ItemStack> group : groups)
+				if (containsAnySame(group, machineStack)) {
+					legal = true;
+					break;
+				}
+			if (!legal)
+				return false;
+		}
+		for (List<ItemStack> group : groups) {
+			boolean satisfied = false;
+			for (ItemStack machineStack : machine)
+				if (containsAnySame(group, machineStack)) {
+					satisfied = true;
+					break;
+				}
+			if (!satisfied)
+				return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Type-only fluid match for saved fluid-ingredient alternatives. Works like
+	 * {@link #itemAlternativesMatch(List, List)} but for fluids.
+	 */
+	private static boolean fluidAlternativesMatch(List<List<FluidStack>> groups, List<FluidStack> machineFluids) {
+		List<FluidStack> machine = distinctFluids(machineFluids);
+		if (machine.isEmpty())
+			return false;
+		for (FluidStack machineStack : machine) {
+			boolean legal = false;
+			for (List<FluidStack> group : groups)
+				if (containsAnySameFluid(group, machineStack)) {
+					legal = true;
+					break;
+				}
+			if (!legal)
+				return false;
+		}
+		for (List<FluidStack> group : groups) {
+			boolean satisfied = false;
+			for (FluidStack machineStack : machine)
+				if (containsAnySameFluid(group, machineStack)) {
+					satisfied = true;
+					break;
+				}
+			if (!satisfied)
+				return false;
+		}
+		return true;
+	}
+
+	private static List<List<ItemStack>> nonEmptyAlternatives(List<List<ItemStack>> alternatives, List<ItemStack> fallback) {
+		if (alternatives != null && !alternatives.isEmpty())
+			return alternatives.stream().filter(list -> !list.isEmpty()).toList();
+		List<List<ItemStack>> result = new ArrayList<>();
+		for (ItemStack stack : fallback)
+			if (!stack.isEmpty())
+				result.add(List.of(stack.copy()));
+		return result;
+	}
+
+	private static List<List<FluidStack>> nonEmptyFluidAlternatives(List<List<FluidStack>> alternatives,
+		List<FluidStack> fallback) {
+		if (alternatives != null && !alternatives.isEmpty())
+			return alternatives.stream().filter(list -> !list.isEmpty()).toList();
+		List<List<FluidStack>> result = new ArrayList<>();
+		for (FluidStack stack : fallback)
+			if (!stack.isEmpty())
+				result.add(List.of(stack.copy()));
+		return result;
+	}
+
+	private static boolean containsAnySame(List<ItemStack> stacks, ItemStack stack) {
+		for (ItemStack s : stacks)
+			if (ItemHelper.sameItem(s, stack))
+				return true;
+		return false;
+	}
+
+	private static boolean containsAnySameFluid(List<FluidStack> stacks, FluidStack stack) {
+		for (FluidStack s : stacks)
+			if (FluidStack.isSameFluid(s, stack))
+				return true;
+		return false;
+	}
+
 	/**
 	 * LOCK gate: the machine's inputs must equal the entry's recorded inputs,
 	 * ignoring quantities - duplicate stacks of the same item are treated as
@@ -417,6 +555,12 @@ public final class RecipeFilterHelper {
 	private static boolean sawInputMatches(RecipeFilterEntry entry, ItemStack input) {
 		List<ItemStack> recorded = distinct(entry.nonEmptyInputs());
 		return recorded.size() == 1 && ItemHelper.sameItem(recorded.get(0), input);
+	}
+
+	/** LOCK fallback for the saw when the imported recipe has been removed; uses saved Ingredient alternatives. */
+	private static boolean sawInputAlternativesMatch(RecipeFilterEntry entry, ItemStack input) {
+		List<List<ItemStack>> groups = nonEmptyAlternatives(entry.inputAlternatives(), entry.inputs());
+		return groups.size() == 1 && containsAnySame(groups.get(0), input);
 	}
 
 	/** Removes duplicate stacks (same item type) so quantity is irrelevant. */

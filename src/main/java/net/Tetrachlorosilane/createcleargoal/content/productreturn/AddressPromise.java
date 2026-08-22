@@ -16,10 +16,6 @@ public class AddressPromise {
 	public final String outputAddress;
 	public int ticksExisted;
 
-	public AddressPromise(ItemStack item, int count) {
-		this(item, count, "");
-	}
-
 	public AddressPromise(ItemStack item, int count, String outputAddress) {
 		this(item, count, outputAddress, 0);
 	}

@@ -14,44 +14,47 @@ import net.minecraft.world.item.ItemStack;
  * Per-station promise queue for the Product Return Station.
  * <p>
  * Promises are kept independently from Create's {@code RequestPromiseQueue}.
- * They are grouped by product type, and within each product type the queue is
- * ordered by promise count ascending (smallest first), so cross operations can
- * always act on the top of the queue as requested. Each promise also tracks its
- * age so expired entries can be cleared, mirroring Create's factory gauge.
+ * They are grouped by {@link RouteKey} (item type + resolved output address),
+ * and within each route the queue is ordered by promise count ascending
+ * (smallest first), so partial removals always act on the top of the queue as
+ * requested. Each promise also tracks its age so expired entries can be
+ * cleared, mirroring Create's factory gauge.
  */
 public class ProductReturnQueue {
 
-	private final Map<ItemKey, PriorityQueue<AddressPromise>> queues = new HashMap<>();
+	private final Map<RouteKey, PriorityQueue<AddressPromise>> queues = new HashMap<>();
 
 	private static final Comparator<AddressPromise> BY_COUNT_ASC =
 		Comparator.comparingInt(AddressPromise::count);
 
-	public void add(ItemStack item, int count) {
-		add(new AddressPromise(item.copy(), count));
-	}
+	private static final Comparator<AddressPromise> FLATTEN_ORDER =
+		Comparator.comparing(AddressPromise::outputAddress)
+			.thenComparingInt(AddressPromise::count)
+			.thenComparingInt(AddressPromise::ticksExisted);
 
 	public void add(ItemStack item, int count, String outputAddress) {
-		add(new AddressPromise(item.copy(), count, outputAddress));
+		add(new AddressPromise(item.copy(), count, normalize(outputAddress)));
 	}
 
 	public void add(ItemStack item, int count, String outputAddress, int ticksExisted) {
-		add(new AddressPromise(item.copy(), count, outputAddress, ticksExisted));
+		add(new AddressPromise(item.copy(), count, normalize(outputAddress), ticksExisted));
 	}
 
 	private void add(AddressPromise promise) {
 		if (promise.item().isEmpty() || promise.count() <= 0)
 			return;
-		queues.computeIfAbsent(new ItemKey(promise.item()), $ -> new PriorityQueue<>(BY_COUNT_ASC))
+		RouteKey key = new RouteKey(new ItemKey(promise.item()), promise.outputAddress());
+		queues.computeIfAbsent(key, $ -> new PriorityQueue<>(BY_COUNT_ASC))
 			.add(promise);
 	}
 
 	/**
-	 * Removes up to {@code count} from the queue for this item, starting at the
-	 * smallest promise and moving to larger ones if the top is insufficient.
-	 * Returns how much was actually removed.
+	 * Removes up to {@code count} from the queue for this item route (item +
+	 * output address), starting at the smallest promise and moving to larger
+	 * ones if the top is insufficient. Returns how much was actually removed.
 	 */
-	public int remove(ItemStack item, int count) {
-		ItemKey key = new ItemKey(item);
+	public int remove(ItemStack item, String outputAddress, int count) {
+		RouteKey key = new RouteKey(new ItemKey(item), outputAddress);
 		PriorityQueue<AddressPromise> queue = queues.get(key);
 		if (queue == null || count <= 0)
 			return 0;
@@ -73,19 +76,22 @@ public class ProductReturnQueue {
 		return count - remaining;
 	}
 
-	/** Removes every promise for the given item. */
+	/** Removes every promise for the given item, across all output addresses. */
 	public void clear(ItemStack item) {
-		queues.remove(new ItemKey(item));
+		ItemKey itemKey = new ItemKey(item);
+		queues.keySet().removeIf(key -> key.item().equals(itemKey));
 	}
 
-	/** Total outstanding count for the item. */
+	/** Total outstanding count for the item across all output addresses. */
 	public int getTotal(ItemStack item) {
-		PriorityQueue<AddressPromise> queue = queues.get(new ItemKey(item));
-		if (queue == null)
-			return 0;
+		ItemKey itemKey = new ItemKey(item);
 		int total = 0;
-		for (AddressPromise promise : queue)
-			total += promise.count();
+		for (Map.Entry<RouteKey, PriorityQueue<AddressPromise>> entry : queues.entrySet()) {
+			if (!entry.getKey().item().equals(itemKey))
+				continue;
+			for (AddressPromise promise : entry.getValue())
+				total += promise.count();
+		}
 		return total;
 	}
 
@@ -123,7 +129,7 @@ public class ProductReturnQueue {
 		if (expiryTicks == -1)
 			return false;
 		boolean changed = false;
-		Iterator<Map.Entry<ItemKey, PriorityQueue<AddressPromise>>> entryIterator =
+		Iterator<Map.Entry<RouteKey, PriorityQueue<AddressPromise>>> entryIterator =
 			queues.entrySet()
 				.iterator();
 		while (entryIterator.hasNext()) {
@@ -139,11 +145,16 @@ public class ProductReturnQueue {
 		return changed;
 	}
 
-	/** Snapshot of all queued promises (for NBT saving). */
+	/**
+	 * Deterministic snapshot of all queued promises (for NBT saving and batching).
+	 * The list is explicitly sorted by output address then count, because
+	 * {@link PriorityQueue#iterator()} does not guarantee heap order.
+	 */
 	public List<AddressPromise> flatten() {
 		List<AddressPromise> result = new ArrayList<>();
 		for (PriorityQueue<AddressPromise> queue : queues.values())
 			result.addAll(queue);
+		result.sort(FLATTEN_ORDER);
 		return result;
 	}
 
@@ -152,5 +163,9 @@ public class ProductReturnQueue {
 		clearAll();
 		for (AddressPromise promise : saved)
 			add(promise.item(), promise.count(), promise.outputAddress(), promise.ticksExisted());
+	}
+
+	private static String normalize(String outputAddress) {
+		return outputAddress == null ? "" : outputAddress;
 	}
 }

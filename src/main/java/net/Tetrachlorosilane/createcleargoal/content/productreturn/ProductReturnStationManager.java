@@ -8,11 +8,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
-import com.simibubi.create.content.logistics.box.PackageItem;
 import com.simibubi.create.content.logistics.packagerLink.RequestPromiseQueue;
 
 import net.minecraft.core.GlobalPos;
@@ -30,9 +26,16 @@ import net.minecraft.world.item.ItemStack;
  */
 public final class ProductReturnStationManager {
 
+	/** Maximum length of the raw Java regex used as the input address. */
+	public static final int MAX_INPUT_ADDRESS_LENGTH = 128;
+	/** Maximum length of the output template (before capture-group expansion). */
+	public static final int MAX_OUTPUT_TEMPLATE_LENGTH = 128;
+
 	private static final Map<GlobalPos, ProductReturnStationBlockEntity> STATIONS = new HashMap<>();
 	private static final Map<UUID, Map<String, Set<GlobalPos>>> BY_NETWORK_ADDRESS = new HashMap<>();
 	private static final WeakHashMap<RequestPromiseQueue, UUID> QUEUE_NETWORKS = new WeakHashMap<>();
+
+
 
 	private ProductReturnStationManager() {
 	}
@@ -41,6 +44,11 @@ public final class ProductReturnStationManager {
 		GlobalPos pos = GlobalPos.of(be.getLevel().dimension(), be.getBlockPos());
 		STATIONS.put(pos, be);
 		if (be.behaviour == null || be.behaviour.freqId == null || be.inputAddress.isBlank()) {
+			setConflict(be, false);
+			return;
+		}
+		// Invalid regexes are not routable; the player must fix the config.
+		if (be.invalidRegex || be.addressRule == null) {
 			setConflict(be, false);
 			return;
 		}
@@ -64,6 +72,7 @@ public final class ProductReturnStationManager {
 	}
 
 	public static void onAddressChanged(ProductReturnStationBlockEntity be, String oldAddress) {
+		be.rebuildAddressRule();
 		GlobalPos pos = GlobalPos.of(be.getLevel().dimension(), be.getBlockPos());
 		STATIONS.remove(pos);
 		if (be.behaviour != null && be.behaviour.freqId != null) {
@@ -71,12 +80,14 @@ public final class ProductReturnStationManager {
 			recomputeConflict(be.behaviour.freqId, oldAddress);
 		}
 		be.queue.clearAll();
+		be.clearPendingRemovals();
 		be.pendingCount = 0;
 		be.awaitingPackage = false;
 		be.lastReportedPromises = 0;
 		be.syncPromises = false;
 		STATIONS.put(pos, be);
-		if (be.behaviour != null && be.behaviour.freqId != null && !be.inputAddress.isBlank()) {
+		if (be.behaviour != null && be.behaviour.freqId != null && !be.inputAddress.isBlank()
+			&& !be.invalidRegex && be.addressRule != null) {
 			UUID network = be.behaviour.freqId;
 			String address = be.inputAddress;
 			BY_NETWORK_ADDRESS.computeIfAbsent(network, $ -> new HashMap<>())
@@ -143,20 +154,23 @@ public final class ProductReturnStationManager {
 			BY_NETWORK_ADDRESS.remove(network);
 	}
 
+	private record Candidate(ProductReturnStationBlockEntity station, String resolvedOutput) {
+	}
+
 	/** Called when a factory gauge adds a promise to Create's network queue. */
 	public static void addPromise(UUID network, String address, ItemStack item, int count) {
 		Map<String, Set<GlobalPos>> byAddress = BY_NETWORK_ADDRESS.get(network);
 		if (byAddress == null)
 			return;
 		String matchAddress = address == null ? "" : address;
-		List<ProductReturnStationBlockEntity> candidates = new ArrayList<>();
-		for (Map.Entry<String, Set<GlobalPos>> entry : byAddress.entrySet()) {
-			if (!matches(entry.getKey(), matchAddress))
-				continue;
-			for (GlobalPos pos : entry.getValue()) {
+		List<Candidate> candidates = new ArrayList<>();
+		for (Set<GlobalPos> positions : byAddress.values()) {
+			for (GlobalPos pos : positions) {
 				ProductReturnStationBlockEntity be = STATIONS.get(pos);
-				if (be != null)
-					candidates.add(be);
+				if (be == null || be.invalidRegex || be.addressRule == null)
+					continue;
+				be.addressRule.resolve(matchAddress)
+					.ifPresent(output -> candidates.add(new Candidate(be, output)));
 			}
 		}
 		if (candidates.isEmpty())
@@ -164,37 +178,14 @@ public final class ProductReturnStationManager {
 
 		// Highest priority = lowest redstone power. If tied, the choice is
 		// undefined (first candidate wins); the conflict warning tells the player.
-		ProductReturnStationBlockEntity best = candidates.get(0);
+		// The resolved output address was already computed once and is reused here.
+		Candidate best = candidates.get(0);
 		for (int i = 1; i < candidates.size(); i++) {
-			ProductReturnStationBlockEntity candidate = candidates.get(i);
-			if (candidate.redstonePower < best.redstonePower)
+			Candidate candidate = candidates.get(i);
+			if (candidate.station().redstonePower < best.station().redstonePower)
 				best = candidate;
 		}
-		best.addPromise(item, count, resolveOutput(best, matchAddress));
-	}
-
-	private static boolean matches(String pattern, String address) {
-		try {
-			return Pattern.compile(pattern).matcher(address).matches();
-		} catch (PatternSyntaxException e) {
-			return PackageItem.matchAddress(pattern, address);
-		}
-	}
-
-	private static String resolveOutput(ProductReturnStationBlockEntity be, String address) {
-		String template = be.outputAddress == null ? "" : be.outputAddress;
-		try {
-			Matcher matcher = Pattern.compile(be.inputAddress).matcher(address);
-			if (matcher.matches()) {
-				try {
-					return matcher.replaceAll(template);
-				} catch (IllegalArgumentException | IndexOutOfBoundsException e) {
-					return template;
-				}
-			}
-		} catch (PatternSyntaxException ignored) {
-		}
-		return template;
+		best.station().addPromise(item, count, best.resolvedOutput());
 	}
 
 	/** Called when Create's original promise is manually cleared. */

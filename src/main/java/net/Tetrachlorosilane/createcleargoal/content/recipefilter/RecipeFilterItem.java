@@ -106,10 +106,16 @@ public class RecipeFilterItem extends FilterItem {
 	public static RecipeFilterEntry fromRecipe(ResourceLocation recipeId, Recipe<?> recipe,
 		HolderLookup.Provider registries) {
 		List<ItemStack> inputs = new ArrayList<>();
+		List<List<ItemStack>> inputAlternatives = new ArrayList<>();
 		for (Ingredient ingredient : recipe.getIngredients()) {
-			ItemStack[] items = ingredient.getItems();
-			if (items.length > 0 && !items[0].isEmpty())
-				inputs.add(items[0]);
+			List<ItemStack> alternatives = new ArrayList<>();
+			for (ItemStack stack : ingredient.getItems())
+				if (!stack.isEmpty())
+					alternatives.add(stack.copy());
+			if (alternatives.isEmpty())
+				continue;
+			inputAlternatives.add(alternatives);
+			inputs.add(alternatives.get(0));
 			if (inputs.size() >= RecipeFilterMenu.INPUT_SLOTS)
 				break;
 		}
@@ -121,11 +127,17 @@ public class RecipeFilterItem extends FilterItem {
 
 		List<FluidStack> fluidInputs = new ArrayList<>();
 		List<FluidStack> fluidOutputs = new ArrayList<>();
+		List<List<FluidStack>> fluidInputAlternatives = new ArrayList<>();
 		if (recipe instanceof ProcessingRecipe<?, ?> processing) {
 			for (SizedFluidIngredient ingredient : processing.getFluidIngredients()) {
-				FluidStack[] fluids = ingredient.getFluids();
-				if (fluids.length > 0 && !fluids[0].isEmpty())
-					fluidInputs.add(fluids[0].copy());
+				List<FluidStack> alternatives = new ArrayList<>();
+				for (FluidStack fluid : ingredient.getFluids())
+					if (!fluid.isEmpty())
+						alternatives.add(fluid.copy());
+				if (alternatives.isEmpty())
+					continue;
+				fluidInputAlternatives.add(alternatives);
+				fluidInputs.add(alternatives.get(0));
 				if (fluidInputs.size() >= RecipeFilterMenu.MAX_FLUID_INPUTS)
 					break;
 			}
@@ -151,7 +163,8 @@ public class RecipeFilterItem extends FilterItem {
 			defaultName = fluidOutputs.get(0).getHoverName().getString();
 		else
 			defaultName = "";
-		return RecipeFilterEntry.ofRecipe(defaultName, recipeId, inputs, outputs, fluidInputs, fluidOutputs);
+		return RecipeFilterEntry.ofRecipe(defaultName, recipeId, inputs, outputs, fluidInputs, fluidOutputs,
+			inputAlternatives, fluidInputAlternatives);
 	}
 
 	// --- FilterItem overrides ---

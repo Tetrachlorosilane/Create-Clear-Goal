@@ -1,7 +1,8 @@
 package net.Tetrachlorosilane.createcleargoal.content.productreturn;
 
+import com.simibubi.create.foundation.blockEntity.renderer.SmartBlockEntityRenderer;
+
 import net.Tetrachlorosilane.createcleargoal.Createcleargoal;
-import net.Tetrachlorosilane.createcleargoal.client.ProductReturnStationRenderer;
 
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.Item;
@@ -68,7 +69,7 @@ public class AllProductReturnStation {
 	public static class ClientEvents {
 		@SubscribeEvent
 		public static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
-			event.registerBlockEntityRenderer(PRODUCT_RETURN_STATION_BE.get(), ProductReturnStationRenderer::new);
+			event.registerBlockEntityRenderer(PRODUCT_RETURN_STATION_BE.get(), SmartBlockEntityRenderer::new);
 		}
 	}
 }

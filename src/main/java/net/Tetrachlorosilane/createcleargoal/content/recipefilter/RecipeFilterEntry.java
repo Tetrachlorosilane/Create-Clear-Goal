@@ -1,5 +1,6 @@
 package net.Tetrachlorosilane.createcleargoal.content.recipefilter;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -23,11 +24,16 @@ import net.neoforged.neoforge.fluids.FluidStack;
  *   <li>{@code inputs} / {@code outputs} - ItemStack snapshots (3x3 + 3 in the GUI)</li>
  *   <li>{@code fluidInputs} / {@code fluidOutputs} - FluidStack snapshots for
  *       imported basin recipes (the GUI remains item-only for manual editing)</li>
+ *   <li>{@code inputAlternatives} / {@code fluidInputAlternatives} - the full
+ *       candidate lists captured from each Ingredient / SizedFluidIngredient at
+ *       import time. They let LOCK keep matching tags and multi-candidate
+ *       ingredients even after the original recipe is removed.</li>
  *   <li>{@code outputMatch} - exact vs contains output matching (per-entry property)</li>
  * </ul>
  */
 public record RecipeFilterEntry(String name, Optional<ResourceLocation> recipeId, List<ItemStack> inputs,
-	List<ItemStack> outputs, OutputMatchMode outputMatch, List<FluidStack> fluidInputs, List<FluidStack> fluidOutputs) {
+	List<ItemStack> outputs, OutputMatchMode outputMatch, List<FluidStack> fluidInputs, List<FluidStack> fluidOutputs,
+	List<List<ItemStack>> inputAlternatives, List<List<FluidStack>> fluidInputAlternatives) {
 
 	public static final Codec<RecipeFilterEntry> CODEC = RecordCodecBuilder.create(i -> i.group(
 		Codec.STRING.optionalFieldOf("name", "").forGetter(RecipeFilterEntry::name),
@@ -36,33 +42,48 @@ public record RecipeFilterEntry(String name, Optional<ResourceLocation> recipeId
 		ItemStack.OPTIONAL_CODEC.listOf().fieldOf("outputs").forGetter(RecipeFilterEntry::outputs),
 		OutputMatchMode.CODEC.optionalFieldOf("outputMatch", OutputMatchMode.EXACT).forGetter(RecipeFilterEntry::outputMatch),
 		FluidStack.OPTIONAL_CODEC.listOf().optionalFieldOf("fluidInputs", List.of()).forGetter(RecipeFilterEntry::fluidInputs),
-		FluidStack.OPTIONAL_CODEC.listOf().optionalFieldOf("fluidOutputs", List.of()).forGetter(RecipeFilterEntry::fluidOutputs)
+		FluidStack.OPTIONAL_CODEC.listOf().optionalFieldOf("fluidOutputs", List.of()).forGetter(RecipeFilterEntry::fluidOutputs),
+		ItemStack.OPTIONAL_CODEC.listOf().listOf().optionalFieldOf("inputAlternatives", List.of()).forGetter(RecipeFilterEntry::inputAlternatives),
+		FluidStack.OPTIONAL_CODEC.listOf().listOf().optionalFieldOf("fluidInputAlternatives", List.of()).forGetter(RecipeFilterEntry::fluidInputAlternatives)
 	).apply(i, RecipeFilterEntry::new));
 
 	public static final Codec<List<RecipeFilterEntry>> LIST_CODEC = CODEC.listOf();
 
+	/** Compatibility constructor used by manual/legacy code; builds single-candidate alternatives. */
+	public RecipeFilterEntry(String name, Optional<ResourceLocation> recipeId, List<ItemStack> inputs,
+		List<ItemStack> outputs, OutputMatchMode outputMatch, List<FluidStack> fluidInputs, List<FluidStack> fluidOutputs) {
+		this(name, recipeId, inputs, outputs, outputMatch, fluidInputs, fluidOutputs,
+			toSingleAlternatives(inputs), toSingleFluidAlternatives(fluidInputs));
+	}
+
 	public static RecipeFilterEntry ofRecipe(String name, ResourceLocation recipeId, List<ItemStack> inputs,
-		List<ItemStack> outputs, List<FluidStack> fluidInputs, List<FluidStack> fluidOutputs) {
+		List<ItemStack> outputs, List<FluidStack> fluidInputs, List<FluidStack> fluidOutputs,
+		List<List<ItemStack>> inputAlternatives, List<List<FluidStack>> fluidInputAlternatives) {
 		return new RecipeFilterEntry(name, Optional.of(recipeId), inputs, outputs, OutputMatchMode.EXACT, fluidInputs,
-			fluidOutputs);
+			fluidOutputs, inputAlternatives, fluidInputAlternatives);
 	}
 
 	/** An empty placeholder entry shown as "new recipe" in the list. */
 	public static RecipeFilterEntry empty() {
-		return new RecipeFilterEntry("", Optional.empty(), List.of(), List.of(), OutputMatchMode.EXACT, List.of(), List.of());
+		return new RecipeFilterEntry("", Optional.empty(), List.of(), List.of(), OutputMatchMode.EXACT, List.of(), List.of(),
+			List.of(), List.of());
 	}
 
 	public RecipeFilterEntry withName(String newName) {
-		return new RecipeFilterEntry(newName, recipeId, inputs, outputs, outputMatch, fluidInputs, fluidOutputs);
+		return new RecipeFilterEntry(newName, recipeId, inputs, outputs, outputMatch, fluidInputs, fluidOutputs,
+			inputAlternatives, fluidInputAlternatives);
 	}
 
 	public RecipeFilterEntry withContents(List<ItemStack> newInputs, List<ItemStack> newOutputs,
 		List<FluidStack> newFluidInputs, List<FluidStack> newFluidOutputs) {
-		return new RecipeFilterEntry(name, recipeId, newInputs, newOutputs, outputMatch, newFluidInputs, newFluidOutputs);
+		return new RecipeFilterEntry(name, recipeId, newInputs, newOutputs, outputMatch, newFluidInputs, newFluidOutputs,
+			mergeAlternatives(inputs, inputAlternatives, newInputs),
+			mergeFluidAlternatives(fluidInputs, fluidInputAlternatives, newFluidInputs));
 	}
 
 	public RecipeFilterEntry withOutputMatch(OutputMatchMode mode) {
-		return new RecipeFilterEntry(name, recipeId, inputs, outputs, mode, fluidInputs, fluidOutputs);
+		return new RecipeFilterEntry(name, recipeId, inputs, outputs, mode, fluidInputs, fluidOutputs,
+			inputAlternatives, fluidInputAlternatives);
 	}
 
 	public List<ItemStack> nonEmptyInputs() {
@@ -122,7 +143,9 @@ public record RecipeFilterEntry(String name, Optional<ResourceLocation> recipeId
 			&& itemStacksEqual(inputs, other.inputs)
 			&& itemStacksEqual(outputs, other.outputs)
 			&& fluidStacksEqual(fluidInputs, other.fluidInputs)
-			&& fluidStacksEqual(fluidOutputs, other.fluidOutputs);
+			&& fluidStacksEqual(fluidOutputs, other.fluidOutputs)
+			&& itemAlternativeListsEqual(inputAlternatives, other.inputAlternatives)
+			&& fluidAlternativeListsEqual(fluidInputAlternatives, other.fluidInputAlternatives);
 	}
 
 	@Override
@@ -134,6 +157,64 @@ public record RecipeFilterEntry(String name, Optional<ResourceLocation> recipeId
 		result = 31 * result + itemStacksHash(outputs);
 		result = 31 * result + fluidStacksHash(fluidInputs);
 		result = 31 * result + fluidStacksHash(fluidOutputs);
+		result = 31 * result + itemAlternativeListsHash(inputAlternatives);
+		result = 31 * result + fluidAlternativeListsHash(fluidInputAlternatives);
+		return result;
+	}
+
+	// --- alternative-list helpers ---
+
+	private static List<List<ItemStack>> toSingleAlternatives(List<ItemStack> inputs) {
+		List<List<ItemStack>> result = new ArrayList<>();
+		for (ItemStack stack : inputs)
+			result.add(stack.isEmpty() ? List.of() : List.of(stack.copy()));
+		return result;
+	}
+
+	private static List<List<FluidStack>> toSingleFluidAlternatives(List<FluidStack> inputs) {
+		List<List<FluidStack>> result = new ArrayList<>();
+		for (FluidStack stack : inputs)
+			result.add(stack.isEmpty() ? List.of() : List.of(stack.copy()));
+		return result;
+	}
+
+	private static List<List<ItemStack>> mergeAlternatives(List<ItemStack> oldInputs,
+		List<List<ItemStack>> oldAlternatives, List<ItemStack> newInputs) {
+		List<List<ItemStack>> result = new ArrayList<>();
+		for (int i = 0; i < newInputs.size(); i++) {
+			ItemStack newStack = newInputs.get(i);
+			if (newStack.isEmpty()) {
+				result.add(List.of());
+				continue;
+			}
+			if (i < oldInputs.size() && i < oldAlternatives.size()
+				&& ItemStack.isSameItemSameComponents(oldInputs.get(i), newStack)
+				&& !oldAlternatives.get(i).isEmpty()) {
+				result.add(oldAlternatives.get(i));
+			} else {
+				result.add(List.of(newStack.copy()));
+			}
+		}
+		return result;
+	}
+
+	private static List<List<FluidStack>> mergeFluidAlternatives(List<FluidStack> oldInputs,
+		List<List<FluidStack>> oldAlternatives, List<FluidStack> newInputs) {
+		List<List<FluidStack>> result = new ArrayList<>();
+		for (int i = 0; i < newInputs.size(); i++) {
+			FluidStack newStack = newInputs.get(i);
+			if (newStack.isEmpty()) {
+				result.add(List.of());
+				continue;
+			}
+			if (i < oldInputs.size() && i < oldAlternatives.size()
+				&& FluidStack.isSameFluidSameComponents(oldInputs.get(i), newStack)
+				&& !oldAlternatives.get(i).isEmpty()) {
+				result.add(oldAlternatives.get(i));
+			} else {
+				result.add(List.of(newStack.copy()));
+			}
+		}
 		return result;
 	}
 
@@ -166,6 +247,38 @@ public record RecipeFilterEntry(String name, Optional<ResourceLocation> recipeId
 		int result = 0;
 		for (FluidStack stack : stacks)
 			result = 31 * result + FluidStack.hashFluidAndComponents(stack);
+		return result;
+	}
+
+	private static boolean itemAlternativeListsEqual(List<List<ItemStack>> a, List<List<ItemStack>> b) {
+		if (a.size() != b.size())
+			return false;
+		for (int i = 0; i < a.size(); i++)
+			if (!itemStacksEqual(a.get(i), b.get(i)))
+				return false;
+		return true;
+	}
+
+	private static int itemAlternativeListsHash(List<List<ItemStack>> lists) {
+		int result = 0;
+		for (List<ItemStack> list : lists)
+			result = 31 * result + itemStacksHash(list);
+		return result;
+	}
+
+	private static boolean fluidAlternativeListsEqual(List<List<FluidStack>> a, List<List<FluidStack>> b) {
+		if (a.size() != b.size())
+			return false;
+		for (int i = 0; i < a.size(); i++)
+			if (!fluidStacksEqual(a.get(i), b.get(i)))
+				return false;
+		return true;
+	}
+
+	private static int fluidAlternativeListsHash(List<List<FluidStack>> lists) {
+		int result = 0;
+		for (List<FluidStack> list : lists)
+			result = 31 * result + fluidStacksHash(list);
 		return result;
 	}
 }

@@ -20,8 +20,10 @@
   "createcleargoal.product_return_station.no_open_promises_tip": "Promises are tracked per station and cleared when expired or fulfilled.",
   "createcleargoal.product_return_station.promised_items": "Promised items",
   "createcleargoal.product_return_station.promise_total": "Total promised: %s",
-  "createcleargoal.product_return_station.input_address": "Input address (regex; capture groups supported)",
-  "createcleargoal.product_return_station.output_address": "Output address (supports $1 / ${name})",
+  "createcleargoal.product_return_station.input_address": "Input address (Create glob by default; prefix with regex: for Java regex)",
+  "createcleargoal.product_return_station.invalid_regex": "Invalid regex: %s (at %s)",
+  "createcleargoal.product_return_station.invalid_regex_saved": "Saved input regex is invalid; reconfigure the station",
+  "createcleargoal.product_return_station.output_address": "Output address (capture groups work in regex: mode)",
   "createcleargoal.product_return_station.save_and_close": "Save and close",
   "createcleargoal.product_return_station.conflict_warning": "Address conflict: same-priority selection is undefined"
 }

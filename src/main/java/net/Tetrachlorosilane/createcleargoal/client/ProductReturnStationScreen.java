@@ -1,6 +1,8 @@
 package net.Tetrachlorosilane.createcleargoal.client;
 
 import java.util.List;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 import com.simibubi.create.content.logistics.AddressEditBox;
 import com.simibubi.create.content.logistics.box.PackageStyles;
@@ -9,6 +11,7 @@ import com.simibubi.create.foundation.gui.AllIcons;
 import com.simibubi.create.foundation.gui.widget.IconButton;
 import com.simibubi.create.foundation.gui.widget.ScrollInput;
 
+import net.Tetrachlorosilane.createcleargoal.content.productreturn.AddressRule;
 import net.Tetrachlorosilane.createcleargoal.content.productreturn.ProductReturnStationBlockEntity;
 import net.Tetrachlorosilane.createcleargoal.content.productreturn.ProductReturnStationConfigurePacket;
 
@@ -32,6 +35,7 @@ public class ProductReturnStationScreen extends AbstractSimiScreen {
 	private AddressEditBox inputField;
 	private AddressEditBox outputField;
 	private ScrollInput promiseExpiration;
+	private String regexError;
 
 	public ProductReturnStationScreen(ProductReturnStationBlockEntity blockEntity) {
 		this.blockEntity = blockEntity;
@@ -76,8 +80,21 @@ public class ProductReturnStationScreen extends AbstractSimiScreen {
 			y + ModGuiTextures.PRODUCT_RETURN_BG.getHeight() - 25, AllIcons.I_CONFIRM);
 		confirm.setToolTip(Component.translatable("createcleargoal.product_return_station.save_and_close"));
 		confirm.withCallback(() -> {
+			String input = inputField.getValue();
+			if (AddressRule.isRegex(input)) {
+				try {
+					Pattern.compile(input.substring(AddressRule.REGEX_PREFIX.length()));
+				} catch (PatternSyntaxException e) {
+					regexError = Component.translatable("createcleargoal.product_return_station.invalid_regex",
+						e.getDescription(), e.getIndex()).getString();
+					inputField.setTextColor(0xFF5555);
+					return;
+				}
+			}
+			regexError = null;
+			inputField.setTextColor(0x555555);
 			CatnipServices.NETWORK.sendToServer(new ProductReturnStationConfigurePacket(blockEntity.getBlockPos(),
-				inputField.getValue(), outputField.getValue(), promiseExpiration.getState()));
+				input, outputField.getValue(), promiseExpiration.getState()));
 			onClose();
 		});
 		addRenderableWidget(confirm);
@@ -116,6 +133,16 @@ public class ProductReturnStationScreen extends AbstractSimiScreen {
 		if (blockEntity.conflict) {
 			Component warning = Component.translatable("createcleargoal.product_return_station.conflict_warning");
 			graphics.drawString(font, warning, x + 8, y + 16, 0xFFAA00, false);
+		}
+
+		// Show a regex error if the last save attempt was rejected on the client,
+		// or if the currently saved input regex is invalid.
+		if (regexError != null && !regexError.isEmpty()) {
+			graphics.drawString(font, regexError, x + 8, y + 26, 0xFF5555, false);
+		} else if (blockEntity.invalidRegex) {
+			graphics.drawString(font,
+				Component.translatable("createcleargoal.product_return_station.invalid_regex_saved"),
+				x + 8, y + 26, 0xFF5555, false);
 		}
 
 		// Show the selected expiry value inside the scroll box, like factory gauge.

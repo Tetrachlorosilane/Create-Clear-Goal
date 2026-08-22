@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.PatternSyntaxException;
 
 import org.apache.commons.lang3.mutable.MutableBoolean;
 import org.jetbrains.annotations.Nullable;
@@ -41,6 +42,11 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 	public LogisticallyLinkedBehaviour behaviour;
 	public String inputAddress = "";
 	public String outputAddress = "";
+	/** Compiled address rule; rebuilt when configuration or NBT is loaded. */
+	@Nullable
+	public AddressRule addressRule;
+	/** True when the saved input regex cannot be compiled. */
+	public boolean invalidRegex;
 
 	/**
 	 * How long promises may live before being cleared, in minutes.
@@ -66,12 +72,20 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 	/** Whether a package created by this station is still waiting to be pulled out. */
 	boolean awaitingPackage;
 
+	/** Packaged amounts waiting to be removed from the queue once the package is pulled out. */
+	private final List<PackagedAmount> pendingRemovals = new ArrayList<>();
+
+	private record PackagedAmount(ItemStack item, String outputAddress, int amount) {
+	}
+
 	/** Independent, per-station promise queue. */
 	public final ProductReturnQueue queue = new ProductReturnQueue();
 
 	public ProductReturnStationBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
 		super(type, pos, state);
-		setLazyTickRate(20);
+		// 5 ticks = 4 times/second: keeps promise routing responsive without
+		// running the full packaging check every game tick.
+		setLazyTickRate(5);
 	}
 
 	@Override
@@ -83,6 +97,7 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 	public void initialize() {
 		super.initialize();
 		if (!level.isClientSide) {
+			rebuildAddressRule();
 			ProductReturnStationManager.register(this);
 			PackagerBlockEntity packager = getPackager();
 			if (packager != null)
@@ -113,6 +128,29 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 		return null;
 	}
 
+	/** Rebuilds the cached address rule; reuses the compiled Pattern when only the output template changed. */
+	public void rebuildAddressRule() {
+		String source = inputAddress == null ? "" : inputAddress;
+		String template = outputAddress == null ? "" : outputAddress;
+		if (addressRule != null && source.equals(addressRule.source())) {
+			addressRule = addressRule.withOutputTemplate(template);
+			invalidRegex = false;
+			return;
+		}
+		try {
+			addressRule = AddressRule.compile(source, template, PackageItem::matchAddress);
+			invalidRegex = false;
+		} catch (PatternSyntaxException e) {
+			addressRule = null;
+			invalidRegex = true;
+		}
+	}
+
+	/** Clears any in-flight packaged amounts (used when the input address changes). */
+	public void clearPendingRemovals() {
+		pendingRemovals.clear();
+	}
+
 	public void setRedstonePower(int power) {
 		if (redstonePower == power)
 			return;
@@ -125,6 +163,12 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 
 	@Override
 	public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
+		if (invalidRegex) {
+			tooltip.add(Component.literal("    ")
+				.append(Component.translatable("createcleargoal.product_return_station.invalid_regex_saved")
+					.withStyle(ChatFormatting.RED)));
+			return true;
+		}
 		if (!conflict)
 			return false;
 		tooltip.add(Component.literal("    ")
@@ -150,7 +194,7 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 
 	public void addPromise(ItemStack item, int count, String outputAddress) {
 		queue.add(item, count, outputAddress == null ? "" : outputAddress);
-		lastReportedPromises = queue.getTotalCount() + pendingCount;
+		lastReportedPromises = queue.getTotalCount();
 		syncPromises = false;
 		setChanged();
 		notifyUpdate();
@@ -159,7 +203,7 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 	public void onPromiseCancelled(ItemStack item) {
 		if (queue.getTotal(item) > 0) {
 			queue.clear(item);
-			lastReportedPromises = queue.getTotalCount() + pendingCount;
+			lastReportedPromises = queue.getTotalCount();
 			syncPromises = false;
 			setChanged();
 			notifyUpdate();
@@ -177,7 +221,12 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 		// The promise batch is only fully completed once the package we created has
 		// actually been pulled out of the packager (heldBox becomes empty again).
 		// If the packager is not loaded yet, keep waiting instead of clearing early.
+		// Queue removal is delayed until this point so the station's server-side
+		// queue total stays in sync with the factory gauge's outstanding promises.
 		if (awaitingPackage && packager != null && packager.heldBox.isEmpty()) {
+			for (PackagedAmount pending : pendingRemovals)
+				queue.remove(pending.item(), pending.outputAddress(), pending.amount());
+			pendingRemovals.clear();
 			awaitingPackage = false;
 			pendingCount = 0;
 			lastReportedPromises = queue.getTotalCount();
@@ -189,7 +238,7 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 		// marking the chunk dirty every game tick.
 		queue.tick(lazyTickRate);
 		if (queue.removeExpired(getPromiseExpiryTimeInTicks())) {
-			lastReportedPromises = queue.getTotalCount() + pendingCount;
+			lastReportedPromises = queue.getTotalCount();
 			syncPromises = true;
 		}
 
@@ -279,9 +328,9 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 			int packagedAmount = original - request.getCount();
 			if (packagedAmount <= 0)
 				continue;
-			// Only the station's own queue is reduced; Create's original promise
-			// system is intentionally left untouched here.
-			queue.remove(request.item(), packagedAmount);
+			// Do not remove from the station queue yet: keep it in sync with the
+			// factory gauge's outstanding promise until the package is pulled out.
+			pendingRemovals.add(new PackagedAmount(request.item().copy(), targetOutput, packagedAmount));
 			totalPackaged += packagedAmount;
 		}
 
@@ -292,7 +341,7 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 		// has actually been pulled out of the packager.
 		pendingCount += totalPackaged;
 		awaitingPackage = true;
-		lastReportedPromises = queue.getTotalCount() + pendingCount;
+		lastReportedPromises = queue.getTotalCount();
 		syncPromises = false;
 		setChanged();
 		notifyUpdate();
@@ -321,6 +370,16 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 				list.add(entry);
 			}
 			tag.put("ReturnPromises", list);
+
+			ListTag pendingList = new ListTag();
+			for (PackagedAmount pending : pendingRemovals) {
+				CompoundTag entry = new CompoundTag();
+				entry.put("Item", pending.item().saveOptional(registries));
+				entry.putString("OutputAddress", pending.outputAddress());
+				entry.putInt("Amount", pending.amount());
+				pendingList.add(entry);
+			}
+			tag.put("PendingRemovals", pendingList);
 		}
 	}
 
@@ -329,6 +388,7 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 		super.read(tag, registries, clientPacket);
 		inputAddress = tag.getString("InputAddress");
 		outputAddress = tag.getString("OutputAddress");
+		rebuildAddressRule();
 		conflict = tag.getBoolean("Conflict");
 		redstonePower = tag.getInt("RedstonePower");
 		promiseClearingInterval = tag.contains("PromiseClearingInterval")
@@ -347,9 +407,18 @@ public class ProductReturnStationBlockEntity extends SmartBlockEntity implements
 						entry.getInt("TicksExisted")));
 			}
 			queue.load(saved);
+
+			pendingRemovals.clear();
+			ListTag pendingList = tag.getList("PendingRemovals", Tag.TAG_COMPOUND);
+			for (int i = 0; i < pendingList.size(); i++) {
+				CompoundTag entry = pendingList.getCompound(i);
+				ItemStack item = ItemStack.parseOptional(registries, entry.getCompound("Item"));
+				if (!item.isEmpty())
+					pendingRemovals.add(new PackagedAmount(item, entry.getString("OutputAddress"), entry.getInt("Amount")));
+			}
 			pendingCount = Math.max(0, tag.getInt("PendingCount"));
 			awaitingPackage = pendingCount > 0 && tag.getBoolean("AwaitingPackage");
-			lastReportedPromises = queue.getTotalCount() + pendingCount;
+			lastReportedPromises = queue.getTotalCount();
 		}
 	}
 }
